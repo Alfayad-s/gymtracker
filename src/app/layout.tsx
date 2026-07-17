@@ -10,6 +10,7 @@ import { ThemeProvider } from '@/components/theme/ThemeProvider'
 import { ServiceWorkerCleanup } from '@/components/theme/ServiceWorkerCleanup'
 import { PwaRegister } from '@/components/pwa/PwaRegister'
 import { SyncProvider } from '@/components/sync/SyncProvider'
+import { HapticProvider } from '@/components/haptics/HapticProvider'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -77,15 +78,17 @@ export default function RootLayout({
         <ThemeProvider>
           <ServiceWorkerCleanup />
           <PwaRegister />
-          <AuthProvider>
-            <SyncProvider>
-              <MobileContainer>
-                <MainShell>{children}</MainShell>
-                <RestTimer />
-                <BottomNavigation />
-              </MobileContainer>
-            </SyncProvider>
-          </AuthProvider>
+          <HapticProvider>
+            <AuthProvider>
+              <SyncProvider>
+                <MobileContainer>
+                  <MainShell>{children}</MainShell>
+                  <RestTimer />
+                  <BottomNavigation />
+                </MobileContainer>
+              </SyncProvider>
+            </AuthProvider>
+          </HapticProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -49,6 +49,7 @@ function Button({
   return (
     <ButtonPrimitive
       data-slot="button"
+      data-haptic={variant === "destructive" ? "warning" : undefined}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />

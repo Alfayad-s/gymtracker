@@ -16,6 +16,7 @@ import {
   Award,
   Timer,
   BarChart3,
+  PartyPopper,
 } from 'lucide-react'
 import {
   format,
@@ -32,7 +33,7 @@ import { usePlanStore, type PlanDay } from '@/stores/planStore'
 import { useProgressStore, computeBodyWeightStats } from '@/stores/progressStore'
 import { useRecoveryStore } from '@/stores/recoveryStore'
 import { useExerciseStore } from '@/stores/exerciseStore'
-import { useHistoryStore } from '@/stores/historyStore'
+import { useHistoryStore, type CompletedWorkout } from '@/stores/historyStore'
 import { useProfileStore } from '@/stores/profileStore'
 import {
   RECOVERY_GROUPS,
@@ -378,6 +379,54 @@ const statusStyles: Record<RecoveryStatus, string> = {
   Fatigued: 'text-destructive',
 }
 
+function RecoveryRing({
+  percent,
+  color,
+  size = 40,
+  stroke = 3.5,
+}: {
+  percent: number
+  color: string
+  size?: number
+  stroke?: number
+}) {
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const clamped = Math.max(0, Math.min(100, percent))
+  const offset = circumference - (clamped / 100) * circumference
+
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90" aria-hidden>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="var(--muted)"
+          strokeWidth={stroke}
+          opacity={0.55}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className="transition-[stroke-dashoffset] duration-500"
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold tabular-nums text-foreground">
+        {Math.round(clamped)}
+      </span>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
@@ -488,6 +537,10 @@ export default function DashboardPage() {
         highlights: null as ReturnType<typeof getGlobalHighlights> | null,
         completedDayKeys: new Set<string>(),
         todayMinutes: 0,
+        todayVolumeKg: 0,
+        todaySets: 0,
+        latestToday: null as CompletedWorkout | null,
+        todayDone: false,
         weekMinutes: [] as number[],
         totalHours: 0,
       }
@@ -498,9 +551,13 @@ export default function DashboardPage() {
       workouts.map((w) => format(parseISO(w.completedAt), 'yyyy-MM-dd'))
     )
     const todayKey = format(now, 'yyyy-MM-dd')
-    const todayMinutes = workouts
-      .filter((w) => format(parseISO(w.completedAt), 'yyyy-MM-dd') === todayKey)
-      .reduce((sum, w) => sum + w.durationMinutes, 0)
+    const todaysWorkouts = workouts.filter(
+      (w) => format(parseISO(w.completedAt), 'yyyy-MM-dd') === todayKey
+    )
+    const todayMinutes = todaysWorkouts.reduce((sum, w) => sum + w.durationMinutes, 0)
+    const todayVolumeKg = todaysWorkouts.reduce((sum, w) => sum + w.volumeKg, 0)
+    const todaySets = todaysWorkouts.reduce((sum, w) => sum + w.totalSets, 0)
+    const latestToday = todaysWorkouts[0] ?? null
 
     const weekMinutes = weekDays.map((day) => {
       const key = format(day, 'yyyy-MM-dd')
@@ -518,6 +575,10 @@ export default function DashboardPage() {
       highlights,
       completedDayKeys,
       todayMinutes,
+      todayVolumeKg,
+      todaySets,
+      latestToday,
+      todayDone: todaysWorkouts.length > 0,
       weekMinutes,
       totalHours,
     }
@@ -720,26 +781,139 @@ export default function DashboardPage() {
       <InstallPrompt />
       {/* Streak */}
       {hydrated && historyStats.streakDays > 0 && (
-        <div className="flex justify-end">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-warning/15 border border-warning/20 px-3 py-1.5">
-            <Flame className="w-3.5 h-3.5 text-warning" />
-            <span className="text-xs font-bold text-warning">
+        <div className="flex justify-center">
+          <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-warning/25 via-warning/15 to-warning/25 border-2 border-warning/50 px-4 py-2 shadow-[0_0_24px_rgba(245,158,11,0.35)] ring-2 ring-warning/20">
+            <Flame className="w-4 h-4 text-warning fill-warning/40 animate-pulse" />
+            <span className="text-sm font-extrabold text-warning tracking-wide">
               {historyStats.streakDays} Day Streak
             </span>
+            <Flame className="w-4 h-4 text-warning fill-warning/40 animate-pulse" />
           </div>
         </div>
       )}
 
       {/* Today's Workout */}
-      <section className="rounded-[24px] border border-primary/25 bg-gradient-to-br from-primary/10 via-card to-card dark:from-[#1A2210] dark:via-[#141419] dark:to-[#0B0B0F] p-5 overflow-hidden">
-        <div className="flex items-center gap-1.5 text-primary mb-3">
-          <Dumbbell className="w-3.5 h-3.5" />
-          <span className="text-[10px] font-bold uppercase tracking-wider">
-            Today&apos;s Workout
-          </span>
+      <section
+        className={`rounded-[24px] border p-5 overflow-hidden ${
+          historyStats.todayDone && !activeSession
+            ? 'border-primary/40 bg-gradient-to-br from-primary/20 via-card to-card dark:from-[#1A2A0E] dark:via-[#141419] dark:to-[#0B0B0F]'
+            : 'border-primary/25 bg-gradient-to-br from-primary/10 via-card to-card dark:from-[#1A2210] dark:via-[#141419] dark:to-[#0B0B0F]'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-1.5 text-primary">
+            {historyStats.todayDone && !activeSession ? (
+              <Check className="w-3.5 h-3.5" />
+            ) : (
+              <Dumbbell className="w-3.5 h-3.5" />
+            )}
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              {historyStats.todayDone && !activeSession
+                ? "Today's Workout · Done"
+                : "Today's Workout"}
+            </span>
+          </div>
+          {historyStats.todayDone && !activeSession && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/20 border border-primary/30 px-2 py-0.5 text-[9px] font-bold text-primary uppercase">
+              <PartyPopper className="w-3 h-3" />
+              Complete
+            </span>
+          )}
         </div>
 
-        {todayDay ? (
+        {historyStats.todayDone && !activeSession ? (
+          <div className="space-y-4">
+            <div className="flex gap-4 items-start">
+              <div className="flex-1 min-w-0 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
+                    <Trophy className="w-6 h-6 text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-[24px] font-bold text-foreground tracking-tight leading-tight">
+                      Workout crushed!
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                      {historyStats.latestToday?.name || workoutSplit} is in the books
+                      {historyStats.streakDays > 0
+                        ? ` · ${historyStats.streakDays}-day streak`
+                        : ''}
+                      .
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-[16px] bg-background/60 border border-border px-3 py-2.5 text-center">
+                    <p className="text-sm font-bold text-foreground tabular-nums">
+                      {historyStats.todayMinutes}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">Minutes</p>
+                  </div>
+                  <div className="rounded-[16px] bg-background/60 border border-border px-3 py-2.5 text-center">
+                    <p className="text-sm font-bold text-foreground tabular-nums">
+                      {historyStats.todaySets}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">Sets</p>
+                  </div>
+                  <div className="rounded-[16px] bg-background/60 border border-border px-3 py-2.5 text-center">
+                    <p className="text-sm font-bold text-foreground tabular-nums">
+                      {formatVolumeKg(historyStats.todayVolumeKg)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">Volume</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Progress</span>
+                    <span className="font-bold text-primary tabular-nums">100%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted/80 overflow-hidden">
+                    <div className="h-full w-full rounded-full bg-primary" />
+                  </div>
+                  <p className="text-[11px] text-primary font-semibold flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" />
+                    Today&apos;s session finished
+                    {historyStats.latestToday
+                      ? ` · ${formatDistanceToNow(parseISO(historyStats.latestToday.completedAt), { addSuffix: true })}`
+                      : ''}
+                  </p>
+                </div>
+              </div>
+
+              {todayDay && (
+                <div className="shrink-0 w-[100px] flex flex-col items-center opacity-90">
+                  <MuscleMap
+                    view={todayMapView}
+                    highlights={todayBody.highlights}
+                    defaultFill="var(--muscle-default)"
+                    interactive={false}
+                    className="max-h-[140px]"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => router.push('/history')}
+                className="flex-1 h-[48px] rounded-[16px] border border-border bg-muted text-sm font-bold text-foreground cursor-pointer active:scale-[0.98]"
+              >
+                View History
+              </button>
+              <button
+                type="button"
+                onClick={handleContinue}
+                className="flex-1 h-[48px] rounded-[16px] bg-primary text-primary-foreground text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] shadow-lg shadow-primary/20"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                Another Session
+              </button>
+            </div>
+          </div>
+        ) : todayDay ? (
           <>
             <div className="flex gap-4">
               <div className="flex-1 min-w-0 space-y-3">
@@ -996,7 +1170,7 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        <div className="bg-card border border-border rounded-[24px] p-4 space-y-4">
+        <div className="bg-transparent rounded-[24px] p-1 space-y-4">
           <div className="flex items-center justify-center gap-2">
             {(['front', 'back'] as const).map((view) => (
               <button
@@ -1006,7 +1180,7 @@ export default function DashboardPage() {
                 className={`h-8 px-4 rounded-full text-xs font-bold capitalize transition-colors cursor-pointer ${
                   bodyView === view
                     ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {view}
@@ -1046,31 +1220,24 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          <div className="space-y-1.5 pt-1 border-t border-border">
-            {recoveryList.map((item) => (
-              <div key={item.group} className="flex items-center gap-3 pt-2.5">
-                <span className="w-16 shrink-0 text-[11px] font-semibold text-foreground">
-                  {item.group}
-                </span>
-                <div className="flex-1 h-2 rounded-full bg-muted/80 overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${Math.round(item.recoveredPct * 100)}%`,
-                      backgroundColor: STATUS_COLOR[item.status],
-                    }}
-                  />
-                </div>
-                <div className="w-[92px] shrink-0 text-right">
-                  <span className={`text-[10px] font-bold ${statusStyles[item.status]}`}>
+          <div className="grid grid-cols-3 gap-3 pt-1">
+            {recoveryList.map((item) => {
+              const pct = Math.round(item.recoveredPct * 100)
+              return (
+                <div
+                  key={item.group}
+                  className="flex flex-col items-center gap-1.5 text-center"
+                >
+                  <RecoveryRing percent={pct} color={STATUS_COLOR[item.status]} />
+                  <span className="text-[11px] font-semibold text-foreground leading-tight">
+                    {item.group}
+                  </span>
+                  <span className={`text-[9px] font-bold ${statusStyles[item.status]}`}>
                     {item.status}
                   </span>
-                  <span className="block text-[9px] text-muted-foreground leading-tight">
-                    {item.status === 'Ready' ? item.label : item.label.replace('Ready in ', '~')}
-                  </span>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </section>
