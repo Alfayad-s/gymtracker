@@ -72,6 +72,17 @@ function isToolUseFailure(message: string) {
   )
 }
 
+function isTpmOrRateLimitMessage(message: string) {
+  return /tokens per minute|tpm|rate limit|too many requests|429/i.test(message)
+}
+
+export function isRateLimitError(error: unknown): boolean {
+  if (!error) return false
+  if (error instanceof Error) return isTpmOrRateLimitMessage(error.message)
+  if (typeof error === 'string') return isTpmOrRateLimitMessage(error)
+  return false
+}
+
 function stringifyFailedGeneration(
   value: string | Record<string, unknown> | undefined
 ): string | null {
@@ -187,8 +198,10 @@ async function runGroqChat(
         sawToolSchemaError = true
         break
       }
-      if (response.status === 429) {
+      if (response.status === 429 || isTpmOrRateLimitMessage(lastError)) {
         coolDownKey(key)
+        // TPM / rate limit — try next API key; don't treat as hard non-retryable
+        continue
       }
 
       if (!RETRYABLE_STATUS.has(response.status)) {

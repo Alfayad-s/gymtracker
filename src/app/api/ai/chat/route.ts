@@ -6,14 +6,16 @@ import {
   PROPOSE_ACTIONS_TOOL,
 } from '@/lib/ai/agent-tools'
 import type { AgentContext } from '@/lib/ai/agent-types'
-import { extractProposalPayload, looksLikeMutationIntent } from '@/lib/ai/extract-proposal'
-import { validateRawProposal } from '@/lib/ai/validate-proposal'
+import { leanContextForModel } from '@/lib/ai/lean-context'
 import {
   completeGroqAgentChat,
   completeGroqTextChat,
   getFailedGeneration,
+  isRateLimitError,
   type GroqMessage,
 } from '@/lib/groq'
+import { extractProposalPayload, looksLikeMutationIntent } from '@/lib/ai/extract-proposal'
+import { validateRawProposal } from '@/lib/ai/validate-proposal'
 
 type ChatRequest = {
   messages?: GroqMessage[]
@@ -30,10 +32,10 @@ function cleanMessages(messages: GroqMessage[] | undefined): GroqMessage[] {
         typeof message.content === 'string' &&
         message.content.trim().length > 0
     )
-    .slice(-12)
+    .slice(-8)
     .map((message) => ({
       role: message.role,
-      content: message.content.trim().slice(0, 4000),
+      content: message.content.trim().slice(0, 1500),
     }))
 }
 
@@ -48,12 +50,29 @@ function sanitizeContext(context: unknown): AgentContext | null {
 }
 
 function buildContextBlock(context: AgentContext) {
-  const latestCustom = context.customExercises[0]
+  const lean = leanContextForModel(context)
+  const latestCustom = lean.customExercises[0]
   const hint = latestCustom
-    ? `\nLatest custom exercise (use for "that/this/it"): id=${latestCustom.id}, name="${latestCustom.name}", muscleGroup=${latestCustom.muscleGroup}, equipment=${latestCustom.equipment}.`
+    ? `\nLatest custom exercise (for "that/this/it"): id=${latestCustom.id}, name="${latestCustom.name}".`
     : '\nNo custom exercises yet.'
 
-  return `Current GymTrack app context (read-only snapshot):${hint}\n${JSON.stringify(context)}`
+  return `GymTrack app snapshot (compact):${hint}\n${JSON.stringify(lean)}`
+}
+
+function friendlyAiError(error: unknown): string {
+  if (isRateLimitError(error)) {
+    return 'AI is busy right now (rate limit). Wait a few seconds and try again.'
+  }
+  if (error instanceof Error && error.message) {
+    if (/tokens per minute|tpm|rate limit|429/i.test(error.message)) {
+      return 'AI is busy right now (rate limit). Wait a few seconds and try again.'
+    }
+    if (error.message.length > 180) {
+      return 'AI is unavailable right now. Please try again.'
+    }
+    return error.message
+  }
+  return 'AI is unavailable right now. Please try again.'
 }
 
 function proposalResponse(
@@ -99,13 +118,13 @@ async function jsonFallbackResponse(
     return proposalResponse(extracted, context)
   }
 
-  // If it looks like a mutation but model answered in prose, craft a soft guidance reply
   if (looksLikeMutationIntent(lastUserText) && !extracted) {
     const latest = context.customExercises[0]
     return NextResponse.json({
       message: {
         role: 'assistant',
-        content: text.trim() ||
+        content:
+          text.trim() ||
           (latest
             ? `I can update "${latest.name}" if you confirm. Say something like: "Update ${latest.name} with these steps: …"`
             : 'Tell me what to create, update, or delete (include the exercise/plan name).'),
@@ -158,7 +177,6 @@ export async function POST(request: Request) {
     )
 
     if (result.kind === 'text') {
-      // Model sometimes embeds a proposal JSON in text — honor it for CRUD.
       const embedded = extractProposalPayload(result.content)
       if (embedded?.actions && looksLikeMutationIntent(lastUserText)) {
         return proposalResponse(embedded, context, null)
@@ -187,7 +205,6 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('AI chat failed:', error)
 
-    // Salvage Groq failed_generation (often contains usable JSON / <function=...>)
     const failedGeneration = getFailedGeneration(error)
     if (failedGeneration) {
       const salvaged = extractProposalPayload(failedGeneration)
@@ -196,18 +213,17 @@ export async function POST(request: Request) {
       }
     }
 
+    if (isRateLimitError(error)) {
+      return NextResponse.json({ error: friendlyAiError(error) }, { status: 429 })
+    }
+
     try {
       return await jsonFallbackResponse(systemMessages, userMessages, context, lastUserText)
     } catch (fallbackError) {
       console.error('AI JSON fallback failed:', fallbackError)
       return NextResponse.json(
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : 'AI is unavailable right now. Please try again.',
-        },
-        { status: 503 }
+        { error: friendlyAiError(isRateLimitError(fallbackError) ? fallbackError : error) },
+        { status: isRateLimitError(fallbackError) ? 429 : 503 }
       )
     }
   }

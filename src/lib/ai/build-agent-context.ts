@@ -7,6 +7,7 @@ import {
   type RecoveryGroup,
 } from '@/lib/muscle-recovery'
 import type { AgentContext } from '@/lib/ai/agent-types'
+import { leanContextForModel } from '@/lib/ai/lean-context'
 import { useExerciseStore } from '@/stores/exerciseStore'
 import { useHistoryStore } from '@/stores/historyStore'
 import { useMuscleGroupStore } from '@/stores/muscleGroupStore'
@@ -18,8 +19,9 @@ import { useThemeStore } from '@/stores/themeStore'
 import { useTimerStore } from '@/stores/timerStore'
 import { useWorkoutStore } from '@/stores/workoutStore'
 
-const HISTORY_LIMIT = 10
-const CATALOG_LIMIT = 80
+const HISTORY_LIMIT = 5
+const CATALOG_LIMIT = 60
+const HISTORY_ID_LIMIT = 30
 
 export function buildAgentContext(): AgentContext {
   const plans = usePlanStore.getState().plans
@@ -91,27 +93,24 @@ export function buildAgentContext(): AgentContext {
       totalSets: w.totalSets,
       volumeKg: w.volumeKg,
     })),
-    historyIds: workouts.map((w) => w.id),
+    historyIds: workouts.slice(0, HISTORY_ID_LIMIT).map((w) => w.id),
     progress: {
       goalWeight: progress.goalWeight,
-      recentBodyWeight: progress.bodyWeightLog.slice(0, 10).map((e) => ({
+      recentBodyWeight: progress.bodyWeightLog.slice(0, 5).map((e) => ({
         id: e.id,
         date: e.date,
         weight: e.weight,
       })),
     },
-    recovery: recoveries.map((r) => ({
-      group: r.group,
-      status: r.status,
-      progress: Math.round(r.progress * 100),
-    })),
+    recovery: recoveries,
     customExercises: customExercises.map((ex) => ({
       id: ex.id,
       name: ex.name,
       muscleGroup: ex.muscleGroup,
       equipment: ex.equipment,
       difficulty: ex.difficulty,
-      instructions: ex.instructions.slice(0, 8),
+      // Keep short — full steps only matter when updating that exercise
+      instructions: ex.instructions.slice(0, 3),
     })),
     muscleGroups: muscleGroups.map((g) => ({
       id: g.id,
@@ -130,20 +129,22 @@ export function buildAgentContext(): AgentContext {
       secondsRemaining: timer.secondsRemaining,
       duration: timer.duration,
     },
+    // Names only for duplicate checks — instructions blow past Groq TPM limits
     exerciseCatalog: catalog.map((ex) => ({
       id: ex.id,
       name: ex.name,
       muscleGroup: ex.muscleGroup,
       equipment: ex.equipment,
       isCustom: ex.isCustom,
-      instructions: ex.instructions.slice(0, 6),
     })),
   }
 }
 
+export { leanContextForModel } from '@/lib/ai/lean-context'
+
 /** Compact JSON for API — strips nothing sensitive (no tokens/avatars). */
 export function serializeAgentContext(context: AgentContext): string {
-  return JSON.stringify(context)
+  return JSON.stringify(leanContextForModel(context))
 }
 
 export type AgentContextSnapshot = AgentContext & {
