@@ -1,0 +1,155 @@
+import { pgTable, uuid, text, timestamp, integer, boolean, numeric } from 'drizzle-orm/pg-core'
+
+// 1. Profiles (user profile information, maps to Supabase auth user)
+export const profiles = pgTable('profiles', {
+  id: uuid('id').primaryKey().notNull(), // matches auth.users id
+  fullName: text('full_name'),
+  avatarUrl: text('avatar_url'),
+  experienceLevel: text('experience_level'), // e.g. 'beginner', 'intermediate', 'advanced'
+  updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()),
+})
+
+// 2. Workout Plans (pre-defined templates, e.g. "Push/Pull/Legs")
+export const workoutPlans = pgTable('workout_plans', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => profiles.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  isCustom: boolean('is_custom').default(true).notNull(),
+  isActive: boolean('is_active').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+// 3. Workout Days (specific days within a workout plan, e.g. "Day A: Push")
+export const workoutDays = pgTable('workout_days', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  planId: uuid('plan_id').references(() => workoutPlans.id, { onDelete: 'cascade' }).notNull(),
+  name: text('name').notNull(), // e.g. "Monday" or "Day A"
+  muscleFocus: text('muscle_focus'), // e.g. "Chest + Triceps"
+  dayOfWeek: integer('day_of_week'), // 1=Mon … 7=Sun (optional)
+  order: integer('order').notNull(),
+})
+
+// 4. Exercise Categories (Chest, Back, Legs, etc.)
+export const exerciseCategories = pgTable('exercise_categories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull().unique(),
+  icon: text('icon'), // Lucide icon identifier
+})
+
+// 5. Exercises (Master list of exercises)
+export const exercises = pgTable('exercises', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description'),
+  instructions: text('instructions'), // JSON string array
+  categoryId: uuid('category_id').references(() => exerciseCategories.id),
+  muscleGroup: text('muscle_group').notNull(), // Chest, Back, Legs...
+  targetMuscle: text('target_muscle').notNull(), // display: Chest
+  secondaryMuscles: text('secondary_muscles'), // JSON string array of display labels
+  anatomyView: text('anatomy_view').default('front'), // front | back
+  anatomyPrimary: text('anatomy_primary'), // JSON MuscleMap slugs
+  anatomySecondary: text('anatomy_secondary'), // JSON MuscleMap slugs
+  equipment: text('equipment'),
+  difficulty: text('difficulty').default('beginner'), // beginner | intermediate | advanced
+  imageUrl: text('image_url'),
+  videoUrl: text('video_url'),
+  userId: uuid('user_id').references(() => profiles.id, { onDelete: 'cascade' }),
+})
+
+// 5b. Planned exercises on a workout day (template sets/reps)
+export const workoutDayExercises = pgTable('workout_day_exercises', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  dayId: uuid('day_id').references(() => workoutDays.id, { onDelete: 'cascade' }).notNull(),
+  exerciseId: uuid('exercise_id').references(() => exercises.id, { onDelete: 'cascade' }),
+  exerciseName: text('exercise_name').notNull(), // denormalized for display / local catalogs
+  order: integer('order').notNull(),
+  targetSets: integer('target_sets').default(3).notNull(),
+  targetReps: integer('target_reps').default(10).notNull(),
+  targetWeight: numeric('target_weight', { precision: 5, scale: 2 }),
+  restSeconds: integer('rest_seconds').default(90),
+  notes: text('notes'),
+})
+
+// 6. Workout Sessions (Historical logs of workouts completed or in-progress)
+export const workoutSessions = pgTable('workout_sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => profiles.id, { onDelete: 'cascade' }).notNull(),
+  planDayId: uuid('plan_day_id').references(() => workoutDays.id), // Null for custom ad-hoc workouts
+  name: text('name').notNull(), // e.g. "Morning Push Session"
+  startedAt: timestamp('started_at').defaultNow().notNull(),
+  completedAt: timestamp('completed_at'),
+  status: text('status').default('active').notNull(), // 'active', 'completed', 'cancelled'
+  notes: text('notes'),
+})
+
+// 7. Workout Exercises (Exercises added to a specific session)
+export const workoutExercises = pgTable('workout_exercises', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id').references(() => workoutSessions.id, { onDelete: 'cascade' }).notNull(),
+  exerciseId: uuid('exercise_id').references(() => exercises.id).notNull(),
+  order: integer('order').notNull(),
+  notes: text('notes'),
+})
+
+// 8. Exercise Sets (Logged sets for a workout exercise)
+export const exerciseSets = pgTable('exercise_sets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workoutExerciseId: uuid('workout_exercise_id').references(() => workoutExercises.id, { onDelete: 'cascade' }).notNull(),
+  setNumber: integer('set_number').notNull(),
+  type: text('type').default('normal').notNull(), // 'warmup', 'normal', 'dropset', 'failure'
+  weight: numeric('weight', { precision: 5, scale: 2 }), // weight lifted (kg/lbs)
+  reps: integer('reps'),
+  isCompleted: boolean('is_completed').default(false).notNull(),
+  rpe: integer('rpe'), // Rate of Perceived Exertion (1-10)
+})
+
+// 9. Body Measurements (For logging weight, body fat %, tape measurements)
+export const bodyMeasurements = pgTable('body_measurements', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => profiles.id, { onDelete: 'cascade' }).notNull(),
+  recordedAt: timestamp('recorded_at').defaultNow().notNull(),
+  weight: numeric('weight', { precision: 5, scale: 2 }),
+  bodyFatPercentage: numeric('body_fat_percentage', { precision: 4, scale: 2 }),
+  chest: numeric('chest', { precision: 5, scale: 2 }),
+  armsLeft: numeric('arms_left', { precision: 4, scale: 2 }),
+  armsRight: numeric('arms_right', { precision: 4, scale: 2 }),
+  waist: numeric('waist', { precision: 5, scale: 2 }),
+  thighsLeft: numeric('thighs_left', { precision: 4, scale: 2 }),
+  thighsRight: numeric('thighs_right', { precision: 4, scale: 2 }),
+  calvesLeft: numeric('calves_left', { precision: 4, scale: 2 }),
+  calvesRight: numeric('calves_right', { precision: 4, scale: 2 }),
+})
+
+// 10. Personal Records (Best lift history)
+export const personalRecords = pgTable('personal_records', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => profiles.id, { onDelete: 'cascade' }).notNull(),
+  exerciseId: uuid('exercise_id').references(() => exercises.id, { onDelete: 'cascade' }).notNull(),
+  setId: uuid('set_id').references(() => exerciseSets.id, { onDelete: 'cascade' }).notNull(),
+  prType: text('pr_type').notNull(), // 'one_rep_max', 'max_weight', 'max_reps'
+  value: numeric('value', { precision: 7, scale: 2 }).notNull(),
+  recordedAt: timestamp('recorded_at').defaultNow().notNull(),
+})
+
+// 11. Notifications (Scaffolding notifications for timers/workout streaks)
+export const notifications = pgTable('notifications', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => profiles.id, { onDelete: 'cascade' }).notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  type: text('type').default('general').notNull(), // 'reminder', 'timer_finished', 'streak_achievement'
+  isRead: boolean('is_read').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+// 12. Per-user app data sync (localStorage mirror for cross-device consistency)
+export const userAppSync = pgTable('user_app_sync', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => profiles.id, { onDelete: 'cascade' })
+    .notNull(),
+  payload: text('payload').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()).notNull(),
+})

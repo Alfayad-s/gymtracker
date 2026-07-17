@@ -1,0 +1,553 @@
+{
+  "muscles": {
+    "front": {
+      "chest": {
+        "x": 250.9,
+        "y": 315.9,
+        "width": 225.3,
+        "height": 122.2
+      },
+      "abs": {
+        "x": 307.8,
+        "y": 425.1,
+        "width": 114.8,
+        "height": 291
+      },
+      "biceps": {
+        "x": 181.5,
+        "y": 403.8,
+        "width": 365.1,
+        "height": 95
+      },
+      "triceps": {
+        "x": 199.6,
+        "y": 384.6,
+        "width": 328.4,
+        "height": 132.5
+      },
+      "deltoids": {
+        "x": 192.6,
+        "y": 296.2,
+        "width": 350.1,
+        "height": 102
+      },
+      "obliques": {
+        "x": 257.4,
+        "y": 416.6,
+        "width": 213.4,
+        "height": 241
+      },
+      "quadriceps": {
+        "x": 240.2,
+        "y": 666.6,
+        "width": 247.2,
+        "height": 285.2
+      },
+      "calves": {
+        "x": 252.1,
+        "y": 1008.4,
+        "width": 221.2,
+        "height": 223.3
+      },
+      "adductors": {
+        "x": 274.1,
+        "y": 647,
+        "width": 180.2,
+        "height": 251.9
+      },
+      "trapezius": {
+        "x": 285,
+        "y": 279.2,
+        "width": 160.8,
+        "height": 32.3
+      },
+      "neck": {
+        "x": 326.4,
+        "y": 239.9,
+        "width": 71.6,
+        "height": 76.1
+      },
+      "forearm": {
+        "x": 123.2,
+        "y": 498.8,
+        "width": 476.9,
+        "height": 187.7
+      },
+      "hands": {
+        "x": 53.8,
+        "y": 690.8,
+        "width": 621.7,
+        "height": 125.4
+      },
+      "knees": {
+        "x": 266.2,
+        "y": 952.1,
+        "width": 196.4,
+        "height": 107.4
+      },
+      "tibialis": {
+        "x": 263.5,
+        "y": 973.6,
+        "width": 199.9,
+        "height": 0.1
+      },
+      "ankles": {
+        "x": 268.5,
+        "y": 1207.1,
+        "width": 193.2,
+        "height": 87.6
+      },
+      "feet": {
+        "x": 245.5,
+        "y": 1293.6,
+        "width": 199.2,
+        "height": 46.5
+      },
+      "serratus": {
+        "x": 255.9,
+        "y": 443.4,
+        "width": 213.4,
+        "height": 60.8
+      },
+      "hip-flexors": {
+        "x": 295.7,
+        "y": 668,
+        "width": 135.3,
+        "height": 35.6
+      },
+      "upper-chest": {
+        "x": 275.8,
+        "y": 333.9,
+        "width": 173.7,
+        "height": 50.2
+      },
+      "lower-chest": {
+        "x": 279.3,
+        "y": 386.5,
+        "width": 166.9,
+        "height": 42.7
+      },
+      "inner-quad": {
+        "x": 312,
+        "y": 706,
+        "width": 102.7,
+        "height": 77.7
+      },
+      "outer-quad": {
+        "x": 253.6,
+        "y": 734.1,
+        "width": 219.5,
+        "height": 84.4
+      },
+      "upper-abs": {
+        "x": 312.6,
+        "y": 423.1,
+        "width": 102.1,
+        "height": 28.9
+      },
+      "lower-abs": {
+        "x": 315.3,
+        "y": 590.7,
+        "width": 96.7,
+        "height": 31.5
+      },
+      "front-deltoid": {
+        "x": 256.1,
+        "y": 313.5,
+        "width": 213.1,
+        "height": 27.8
+      },
+      "head": {
+        "x": 298.5,
+        "y": 125.3,
+        "width": 129,
+        "height": 133.7
+      },
+      "hair": {
+        "x": 415,
+        "y": 167.7,
+        "width": 3.9,
+        "height": 24.3
+      }
+    },
+    "back": {
+      "neck": {
+        "x": 1022.7,
+        "y": 217.4,
+        "width": 121.8,
+        "height": 74
+      },
+      "trapezius": {
+        "x": 1071.1,
+        "y": 302.1,
+        "width": 92.9,
+        "height": 170.4
+      },
+      "deltoids": {
+        "x": 980.7,
+        "y": 316.4,
+        "width": 272.1,
+        "height": 80.9
+      },
+      "upper-back": {
+        "x": 954.8,
+        "y": 322.4,
+        "width": 256.4,
+        "height": 260.9
+      },
+      "triceps": {
+        "x": 903.6,
+        "y": 381.5,
+        "width": 365.1,
+        "height": 153
+      },
+      "lower-back": {
+        "x": 979.5,
+        "y": 486.2,
+        "width": 205.7,
+        "height": 140.9
+      },
+      "forearm": {
+        "x": 839.4,
+        "y": 518.4,
+        "width": 473.4,
+        "height": 169.7
+      },
+      "gluteal": {
+        "x": 974.4,
+        "y": 618.2,
+        "width": 219.1,
+        "height": 161.5
+      },
+      "adductors": {
+        "x": 1056.9,
+        "y": 785.2,
+        "width": 70.4,
+        "height": 77.6
+      },
+      "hamstring": {
+        "x": 963.3,
+        "y": 741.1,
+        "width": 239.3,
+        "height": 265.9
+      },
+      "calves": {
+        "x": 969.6,
+        "y": 971,
+        "width": 229.6,
+        "height": 319.5
+      },
+      "ankles": {
+        "x": 986.9,
+        "y": 1264.4,
+        "width": 191.5,
+        "height": 56.4
+      },
+      "feet": {
+        "x": 962.2,
+        "y": 1323.1,
+        "width": 243.6,
+        "height": 19.6
+      },
+      "hands": {
+        "x": 782.2,
+        "y": 689.9,
+        "width": 603.1,
+        "height": 125.3
+      },
+      "head": {
+        "x": 1028.1,
+        "y": 166.4,
+        "width": 37.4,
+        "height": 42.6
+      },
+      "hair": {
+        "x": 1021.5,
+        "y": 96.2,
+        "width": 122.8,
+        "height": 113
+      }
+    }
+  },
+  "regions": {
+    "chest": {
+      "view": "front",
+      "viewBox": {
+        "x": 226.9,
+        "y": 240.3,
+        "width": 273.3,
+        "height": 273.3
+      },
+      "slugs": [
+        "chest",
+        "upper-chest",
+        "lower-chest"
+      ]
+    },
+    "shoulders_front": {
+      "view": "front",
+      "viewBox": {
+        "x": 168.6,
+        "y": 148.1,
+        "width": 398.1,
+        "height": 398.1
+      },
+      "slugs": [
+        "deltoids",
+        "front-deltoid"
+      ]
+    },
+    "arms_front": {
+      "view": "front",
+      "viewBox": {
+        "x": 70,
+        "y": 360,
+        "width": 220,
+        "height": 220
+      },
+      "slugs": [
+        "biceps",
+        "triceps",
+        "forearm"
+      ]
+    },
+    "abs": {
+      "view": "front",
+      "viewBox": {
+        "x": 190.3,
+        "y": 392.6,
+        "width": 347.5,
+        "height": 347.5
+      },
+      "slugs": [
+        "abs",
+        "upper-abs",
+        "lower-abs",
+        "obliques"
+      ]
+    },
+    "quads": {
+      "view": "front",
+      "viewBox": {
+        "x": 197.2,
+        "y": 642.6,
+        "width": 333.2,
+        "height": 333.2
+      },
+      "slugs": [
+        "quadriceps",
+        "inner-quad",
+        "outer-quad",
+        "hip-flexors"
+      ]
+    },
+    "back": {
+      "view": "back",
+      "viewBox": {
+        "x": 896.5,
+        "y": 278.1,
+        "width": 373,
+        "height": 373
+      },
+      "slugs": [
+        "upper-back",
+        "trapezius",
+        "lower-back"
+      ]
+    },
+    "shoulders_back": {
+      "view": "back",
+      "viewBox": {
+        "x": 956.7,
+        "y": 196.8,
+        "width": 320.1,
+        "height": 320.1
+      },
+      "slugs": [
+        "deltoids",
+        "rear-deltoid"
+      ]
+    },
+    "glutes": {
+      "view": "back",
+      "viewBox": {
+        "x": 950.4,
+        "y": 565.4,
+        "width": 267.1,
+        "height": 267.1
+      },
+      "slugs": [
+        "gluteal"
+      ]
+    },
+    "hamstrings": {
+      "view": "back",
+      "viewBox": {
+        "x": 926,
+        "y": 717.1,
+        "width": 313.9,
+        "height": 313.9
+      },
+      "slugs": [
+        "hamstring"
+      ]
+    },
+    "calves": {
+      "view": "back",
+      "viewBox": {
+        "x": 900.7,
+        "y": 947,
+        "width": 367.5,
+        "height": 367.5
+      },
+      "slugs": [
+        "calves"
+      ]
+    },
+    "forearms_front": {
+      "view": "front",
+      "viewBox": {
+        "x": 55,
+        "y": 460,
+        "width": 200,
+        "height": 200
+      },
+      "slugs": [
+        "forearm",
+        "hands"
+      ]
+    }
+  },
+  "sides": {
+    "front": {
+      "biceps": {
+        "left": {
+          "x": 181.5,
+          "y": 403.8,
+          "width": 41.6,
+          "height": 89.4
+        },
+        "right": {
+          "x": 504.6,
+          "y": 403.8,
+          "width": 41.9,
+          "height": 95
+        }
+      },
+      "forearm": {
+        "left": {
+          "x": 123.2,
+          "y": 498.8,
+          "width": 91,
+          "height": 187.6
+        },
+        "right": {
+          "x": 514.1,
+          "y": 498.7,
+          "width": 91.4,
+          "height": 187.8
+        }
+      },
+      "triceps": {
+        "left": {
+          "x": 199.6,
+          "y": 385.2,
+          "width": 52.4,
+          "height": 129.6
+        },
+        "right": {
+          "x": 476.1,
+          "y": 384.6,
+          "width": 51.9,
+          "height": 132.5
+        }
+      },
+      "hands": {
+        "left": {
+          "x": 52.8,
+          "y": 690.8,
+          "width": 97.5,
+          "height": 123.8
+        },
+        "right": {
+          "x": 577.8,
+          "y": 692.2,
+          "width": 97.7,
+          "height": 124
+        }
+      },
+      "deltoids": {
+        "left": {
+          "x": 192.6,
+          "y": 298,
+          "width": 85.9,
+          "height": 100.2
+        },
+        "right": {
+          "x": 449.4,
+          "y": 296.2,
+          "width": 93.3,
+          "height": 101.9
+        }
+      }
+    },
+    "back": {
+      "forearm": {
+        "left": {
+          "x": 838.8,
+          "y": 518.7,
+          "width": 89.4,
+          "height": 169
+        },
+        "right": {
+          "x": 1239.1,
+          "y": 518.4,
+          "width": 89.3,
+          "height": 169.7
+        }
+      },
+      "triceps": {
+        "left": {
+          "x": 898.4,
+          "y": 381.9,
+          "width": 64.7,
+          "height": 152.5
+        },
+        "right": {
+          "x": 1205,
+          "y": 381.5,
+          "width": 63.6,
+          "height": 153
+        }
+      },
+      "hands": {
+        "left": {
+          "x": 772.5,
+          "y": 689.9,
+          "width": 97.6,
+          "height": 124.9
+        },
+        "right": {
+          "x": 1296.9,
+          "y": 690.7,
+          "width": 97.7,
+          "height": 124.4
+        }
+      },
+      "deltoids": {
+        "left": {
+          "x": 914,
+          "y": 309.7,
+          "width": 67.3,
+          "height": 88
+        },
+        "right": {
+          "x": 1185,
+          "y": 308.5,
+          "width": 67.8,
+          "height": 89.1
+        }
+      }
+    }
+  }
+}
