@@ -4,7 +4,7 @@ import * as React from 'react'
 import { motion, type Variants } from 'framer-motion'
 
 import {
-  getVariants,
+  useVariants,
   useAnimateIconContext,
   IconWrapper,
   type IconProps,
@@ -45,7 +45,7 @@ const animations = {
 
 function IconComponent({ size, ...props }: GaugeProps) {
   const { controls } = useAnimateIconContext()
-  const variants = getVariants(animations)
+  const variants = useVariants(animations)
 
   return (
     <motion.svg

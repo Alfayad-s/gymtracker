@@ -110,7 +110,7 @@ function IconWrapper<T extends string>({
   )
 }
 
-function getVariants<
+function useVariants<
   V extends { default: T; [key: string]: T },
   T extends Record<string, Variants>,
 >(animations: V): T {
@@ -121,7 +121,7 @@ function getVariants<
 export {
   IconWrapper,
   useAnimateIconContext,
-  getVariants,
+  useVariants,
   type IconProps,
   type IconWrapperProps,
 }
