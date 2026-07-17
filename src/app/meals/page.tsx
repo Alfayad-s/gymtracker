@@ -1,23 +1,28 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import {
   Apple,
+  Camera,
   Coffee,
   Cookie,
+  Loader2,
   Plus,
+  Sparkles,
   Trash2,
   UtensilsCrossed,
   Moon,
 } from 'lucide-react'
 import {
   MEAL_TYPE_LABELS,
+  mealTypeFromTime,
   summarizeMeals,
   todayKey,
   useMealStore,
   type MealType,
 } from '@/stores/mealStore'
+import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
 
 const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack']
@@ -46,20 +51,68 @@ function waitForHydration() {
   })
 }
 
+async function uploadMealPhoto(file: File): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('mealKey', `draft-${Date.now().toString(36)}`)
+
+  const res = await fetch('/api/meals/media', {
+    method: 'POST',
+    body: form,
+  })
+  const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string }
+  if (!res.ok || !data.url) {
+    throw new Error(data.error || 'Failed to upload photo')
+  }
+  return data.url
+}
+
+async function analyzeMealPhoto(imageUrl: string, hint?: string) {
+  const res = await fetch('/api/ai/analyze-meal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageUrl, hint: hint?.trim() || undefined }),
+  })
+  const data = (await res.json().catch(() => ({}))) as {
+    suggestion?: {
+      name: string
+      calories: number
+      proteinG: number
+      carbsG: number
+      fatG: number
+      notes?: string
+      confidence?: string
+    }
+    error?: string
+  }
+  if (!res.ok || !data.suggestion) {
+    throw new Error(data.error || 'AI could not read this meal')
+  }
+  return data.suggestion
+}
+
 export default function MealsPage() {
   const meals = useMealStore((s) => s.meals)
   const dailyCalorieGoal = useMealStore((s) => s.dailyCalorieGoal)
   const dailyProteinGoal = useMealStore((s) => s.dailyProteinGoal)
   const addMeal = useMealStore((s) => s.addMeal)
   const deleteMeal = useMealStore((s) => s.deleteMeal)
+  const user = useAuthStore((s) => s.user)
+
+  const photoRef = useRef<HTMLInputElement>(null)
   const [hydrated, setHydrated] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [type, setType] = useState<MealType>('lunch')
+  const [type, setType] = useState<MealType>(() => mealTypeFromTime())
   const [name, setName] = useState('')
   const [calories, setCalories] = useState('')
   const [protein, setProtein] = useState('')
   const [carbs, setCarbs] = useState('')
   const [fat, setFat] = useState('')
+  const [imageUrl, setImageUrl] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const [aiNote, setAiNote] = useState<string | null>(null)
 
   const date = todayKey()
 
@@ -82,13 +135,23 @@ export default function MealsPage() {
   const caloriePct = Math.min(100, Math.round((totals.calories / dailyCalorieGoal) * 100))
   const proteinPct = Math.min(100, Math.round((totals.proteinG / dailyProteinGoal) * 100))
 
+  const openForm = () => {
+    setType(mealTypeFromTime())
+    setShowForm(true)
+    setPhotoError(null)
+    setAiNote(null)
+  }
+
   const resetForm = () => {
     setName('')
     setCalories('')
     setProtein('')
     setCarbs('')
     setFat('')
-    setType('lunch')
+    setImageUrl('')
+    setType(mealTypeFromTime())
+    setPhotoError(null)
+    setAiNote(null)
     setShowForm(false)
   }
 
@@ -103,10 +166,64 @@ export default function MealsPage() {
       proteinG: Number(protein) || 0,
       carbsG: Number(carbs) || 0,
       fatG: Number(fat) || 0,
+      imageUrl: imageUrl || undefined,
+      notes: aiNote || undefined,
     })
     resetForm()
   }
 
+  const handlePhotoPick = async (file: File | undefined) => {
+    if (!file) return
+    if (!user) {
+      setPhotoError('Sign in to take a photo and let AI log the meal.')
+      return
+    }
+
+    setPhotoError(null)
+    setAiNote(null)
+    setUploading(true)
+    try {
+      const url = await uploadMealPhoto(file)
+      setImageUrl(url)
+      setType(mealTypeFromTime())
+
+      setAnalyzing(true)
+      const suggestion = await analyzeMealPhoto(url, name)
+      setName(suggestion.name)
+      setCalories(String(suggestion.calories))
+      setProtein(String(suggestion.proteinG))
+      setCarbs(String(suggestion.carbsG))
+      setFat(String(suggestion.fatG))
+      if (suggestion.notes) setAiNote(suggestion.notes)
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Photo or AI analysis failed')
+    } finally {
+      setUploading(false)
+      setAnalyzing(false)
+    }
+  }
+
+  const handleAnalyzeAgain = async () => {
+    if (!imageUrl || !user) return
+    setPhotoError(null)
+    setAnalyzing(true)
+    try {
+      const suggestion = await analyzeMealPhoto(imageUrl, name)
+      setName(suggestion.name)
+      setCalories(String(suggestion.calories))
+      setProtein(String(suggestion.proteinG))
+      setCarbs(String(suggestion.carbsG))
+      setFat(String(suggestion.fatG))
+      if (suggestion.notes) setAiNote(suggestion.notes)
+      setType(mealTypeFromTime())
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'AI analysis failed')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  const busy = uploading || analyzing
   const inputClass =
     'w-full h-11 bg-muted border border-border rounded-[14px] px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary'
 
@@ -121,7 +238,7 @@ export default function MealsPage() {
         </div>
         <button
           type="button"
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => (showForm ? resetForm() : openForm())}
           className="h-10 px-3 rounded-[14px] bg-primary text-primary-foreground text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95"
         >
           <Plus className="w-3.5 h-3.5" />
@@ -206,6 +323,90 @@ export default function MealsPage() {
                 New meal
               </p>
 
+              <div className="rounded-[20px] border border-border bg-muted/40 overflow-hidden">
+                <div className="relative aspect-[16/10] bg-background">
+                  {imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={imageUrl}
+                      alt="Meal photo preview"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <Camera className="w-8 h-8 opacity-50" />
+                      <p className="text-xs">Snap a photo for AI logging</p>
+                    </div>
+                  )}
+                  {busy && (
+                    <div className="absolute inset-0 bg-background/70 flex flex-col items-center justify-center gap-2">
+                      <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                      <p className="text-xs font-medium text-foreground">
+                        {uploading ? 'Uploading photo…' : 'AI reading meal…'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2 p-3">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => photoRef.current?.click()}
+                    className="flex-1 h-11 rounded-[14px] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] disabled:opacity-60 bg-primary text-primary-foreground"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    {imageUrl ? 'Retake photo' : 'Take / choose photo'}
+                  </button>
+                  {imageUrl && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleAnalyzeAgain()}
+                        className="h-11 px-3 rounded-[14px] bg-card border border-border text-primary cursor-pointer active:scale-95 disabled:opacity-60"
+                        aria-label="Analyze with AI"
+                        title="Analyze with AI"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setImageUrl('')
+                          setAiNote(null)
+                        }}
+                        className="h-11 px-3 rounded-[14px] bg-card border border-border text-muted-foreground cursor-pointer active:scale-95 disabled:opacity-60"
+                        aria-label="Remove photo"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+                </div>
+                <input
+                  ref={photoRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    e.target.value = ''
+                    void handlePhotoPick(file)
+                  }}
+                />
+              </div>
+
+              {photoError && (
+                <p className="text-xs text-destructive px-0.5">{photoError}</p>
+              )}
+              {aiNote && !photoError && (
+                <p className="text-[11px] text-muted-foreground px-0.5">
+                  AI note: {aiNote}
+                </p>
+              )}
+
               <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide">
                 {MEAL_TYPES.map((t) => {
                   const Icon = TYPE_ICON[t]
@@ -226,6 +427,9 @@ export default function MealsPage() {
                   )
                 })}
               </div>
+              <p className="text-[10px] text-muted-foreground px-0.5 -mt-1">
+                Suggested from current time · change if needed
+              </p>
 
               <input
                 value={name}
@@ -270,13 +474,14 @@ export default function MealsPage() {
                 <Button
                   type="button"
                   onClick={resetForm}
+                  disabled={busy}
                   className="flex-1 h-11 rounded-[14px] bg-muted text-foreground border-0"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
-                  disabled={!name.trim()}
+                  disabled={!name.trim() || busy}
                   className="flex-1 h-11 rounded-[14px] bg-primary text-primary-foreground font-bold border-0"
                 >
                   Save meal
@@ -295,7 +500,7 @@ export default function MealsPage() {
                 <UtensilsCrossed className="w-8 h-8 text-muted-foreground mx-auto opacity-60" />
                 <p className="text-sm font-bold text-foreground">No meals yet</p>
                 <p className="text-xs text-muted-foreground">
-                  Tap Log meal to track calories and macros.
+                  Snap a photo or log macros manually.
                 </p>
               </div>
             ) : (
@@ -307,9 +512,18 @@ export default function MealsPage() {
                       key={meal.id}
                       className="bg-card border border-border rounded-[20px] p-4 flex gap-3 items-start"
                     >
-                      <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
-                        <Icon className="w-4 h-4 text-primary" />
-                      </div>
+                      {meal.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={meal.imageUrl}
+                          alt=""
+                          className="w-10 h-10 rounded-xl object-cover border border-border shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
+                          <Icon className="w-4 h-4 text-primary" />
+                        </div>
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">

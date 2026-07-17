@@ -17,6 +17,8 @@ import {
   Timer,
   BarChart3,
   PartyPopper,
+  Apple,
+  UtensilsCrossed,
 } from 'lucide-react'
 import {
   format,
@@ -35,6 +37,11 @@ import { useRecoveryStore } from '@/stores/recoveryStore'
 import { useExerciseStore } from '@/stores/exerciseStore'
 import { useHistoryStore, type CompletedWorkout } from '@/stores/historyStore'
 import { useProfileStore } from '@/stores/profileStore'
+import {
+  summarizeMeals,
+  todayKey,
+  useMealStore,
+} from '@/stores/mealStore'
 import {
   RECOVERY_GROUPS,
   GROUP_TO_MAP,
@@ -210,6 +217,23 @@ function DashboardSkeleton() {
         <Skeleton className="h-4 w-4 rounded" />
       </div>
 
+      {/* Meals */}
+      <div className="rounded-[24px] border border-border bg-card p-4 space-y-3">
+        <Skeleton className="h-3 w-28" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-6 w-20" />
+            <Skeleton className="h-2 w-full rounded-full" />
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-6 w-20" />
+            <Skeleton className="h-2 w-full rounded-full" />
+          </div>
+        </div>
+      </div>
+
       {/* Quick stats */}
       <div className="grid grid-cols-3 gap-2.5">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -293,6 +317,7 @@ function areDashboardStoresHydrated() {
     useExerciseStore,
     useProfileStore,
     useWorkoutStore,
+    useMealStore,
   ]
   return stores.every((store) => {
     const persistApi = (
@@ -439,6 +464,9 @@ export default function DashboardPage() {
   const lastTrained = useRecoveryStore((s) => s.lastTrained)
   const customExercises = useExerciseStore((s) => s.exercises)
   const workouts = useHistoryStore((s) => s.workouts)
+  const meals = useMealStore((s) => s.meals)
+  const dailyCalorieGoal = useMealStore((s) => s.dailyCalorieGoal)
+  const dailyProteinGoal = useMealStore((s) => s.dailyProteinGoal)
   const profileAvatarUrl = useProfileStore((s) => s.avatarUrl)
   const authLoading = useAuthStore((s) => s.loading)
   const [bodyView, setBodyView] = useState<'front' | 'back'>('front')
@@ -463,6 +491,7 @@ export default function DashboardPage() {
       waitForStoreHydration(useExerciseStore),
       waitForStoreHydration(useProfileStore),
       waitForStoreHydration(useWorkoutStore),
+      waitForStoreHydration(useMealStore),
     ]).then(() => {
       if (!cancelled) {
         clearTimeout(timeout)
@@ -645,6 +674,23 @@ export default function DashboardPage() {
   }, [bodyWeightLog, goalWeight, hydrated])
 
   const latestPr = historyStats.highlights?.heaviest ?? null
+
+  const mealStats = useMemo(() => {
+    if (!hydrated) {
+      return { calories: 0, proteinG: 0, carbsG: 0, fatG: 0, count: 0 }
+    }
+    const key = todayKey()
+    return summarizeMeals(meals.filter((m) => m.date === key))
+  }, [hydrated, meals])
+
+  const caloriePct = Math.min(
+    100,
+    Math.round((mealStats.calories / Math.max(1, dailyCalorieGoal)) * 100)
+  )
+  const proteinPct = Math.min(
+    100,
+    Math.round((mealStats.proteinG / Math.max(1, dailyProteinGoal)) * 100)
+  )
 
   const sessionExerciseCount = activeSession?.exercises.length ?? 0
   const sessionCompleted = activeSession
@@ -1081,6 +1127,102 @@ export default function DashboardPage() {
           </p>
         </div>
         <ChevronRight className="w-4 h-4 text-primary" />
+      </button>
+
+      {/* Today's Meals */}
+      <button
+        type="button"
+        onClick={() => router.push('/meals')}
+        className="w-full rounded-[24px] border border-primary/25 bg-gradient-to-br from-primary/10 via-transparent to-transparent p-4 text-left cursor-pointer active:scale-[0.99] transition-transform space-y-3"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-primary">
+            <Apple className="w-4 h-4" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Today&apos;s Meals
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-primary">
+            {mealStats.count > 0 ? 'Log more' : 'Log meal'}
+            <ChevronRight className="w-3.5 h-3.5" />
+          </span>
+        </div>
+
+        {mealStats.count === 0 ? (
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
+              <UtensilsCrossed className="w-4 h-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-foreground">No meals logged yet</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Snap a photo or add macros manually
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                  Calories
+                </p>
+                <p className="text-xl font-bold text-foreground tabular-nums mt-0.5">
+                  {mealStats.calories}
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {' '}
+                    / {dailyCalorieGoal}
+                  </span>
+                </p>
+                <div className="mt-2 h-2 rounded-full bg-muted/80 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${caloriePct}%` }}
+                  />
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                  Protein
+                </p>
+                <p className="text-xl font-bold text-foreground tabular-nums mt-0.5">
+                  {mealStats.proteinG}g
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {' '}
+                    / {dailyProteinGoal}g
+                  </span>
+                </p>
+                <div className="mt-2 h-2 rounded-full bg-muted/80 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-warning transition-all"
+                    style={{ width: `${proteinPct}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-[14px] bg-background/50 border border-border px-3 py-2 text-center">
+                <p className="text-sm font-bold text-foreground tabular-nums">
+                  {mealStats.carbsG}g
+                </p>
+                <p className="text-[10px] text-muted-foreground">Carbs</p>
+              </div>
+              <div className="rounded-[14px] bg-background/50 border border-border px-3 py-2 text-center">
+                <p className="text-sm font-bold text-foreground tabular-nums">
+                  {mealStats.fatG}g
+                </p>
+                <p className="text-[10px] text-muted-foreground">Fat</p>
+              </div>
+              <div className="rounded-[14px] bg-background/50 border border-border px-3 py-2 text-center">
+                <p className="text-sm font-bold text-foreground tabular-nums">
+                  {mealStats.count}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Meals</p>
+              </div>
+            </div>
+          </>
+        )}
       </button>
 
       {/* Quick stats */}

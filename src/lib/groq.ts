@@ -2,9 +2,16 @@ import 'server-only'
 
 type GroqRole = 'system' | 'user' | 'assistant' | 'tool'
 
+export type GroqTextPart = { type: 'text'; text: string }
+export type GroqImagePart = {
+  type: 'image_url'
+  image_url: { url: string }
+}
+export type GroqContentPart = GroqTextPart | GroqImagePart
+
 export type GroqMessage = {
   role: GroqRole
-  content: string
+  content: string | GroqContentPart[]
   tool_call_id?: string
 }
 
@@ -42,6 +49,7 @@ export type GroqChatResult =
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const DEFAULT_MODEL = 'llama-3.1-8b-instant'
+const DEFAULT_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct'
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504])
 const KEY_COOLDOWN_MS = 60_000
 const keyCooldownUntil = new Map<string, number>()
@@ -101,13 +109,15 @@ async function callGroq(params: {
   tools?: unknown[]
   toolChoice?: 'auto' | 'none'
   temperature?: number
+  model?: string
+  maxTokens?: number
   signal: AbortSignal
 }) {
   const body: Record<string, unknown> = {
-    model: process.env.GROQ_MODEL || DEFAULT_MODEL,
+    model: params.model || process.env.GROQ_MODEL || DEFAULT_MODEL,
     messages: params.messages,
     temperature: params.temperature ?? 0.45,
-    max_tokens: 1400,
+    max_tokens: params.maxTokens ?? 1400,
   }
   if (params.tools?.length) {
     body.tools = params.tools
@@ -152,6 +162,9 @@ type RunOptions = {
   toolChoice?: 'auto' | 'none'
   temperature?: number
   allowToolFallback?: boolean
+  model?: string
+  maxTokens?: number
+  timeoutMs?: number
 }
 
 async function runGroqChat(
@@ -175,7 +188,7 @@ async function runGroqChat(
     }
 
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 20_000)
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000)
 
     try {
       const { response, data } = await callGroq({
@@ -184,6 +197,8 @@ async function runGroqChat(
         tools: options.tools,
         toolChoice: options.toolChoice,
         temperature: options.temperature,
+        model: options.model,
+        maxTokens: options.maxTokens,
         signal: controller.signal,
       })
 
@@ -200,7 +215,6 @@ async function runGroqChat(
       }
       if (response.status === 429 || isTpmOrRateLimitMessage(lastError)) {
         coolDownKey(key)
-        // TPM / rate limit — try next API key; don't treat as hard non-retryable
         continue
       }
 
@@ -234,7 +248,6 @@ async function runGroqChat(
     options.tools?.length &&
     options.toolChoice !== 'none'
   ) {
-    // Retry once colder — often fixes flaky tool JSON.
     try {
       const colder = await runGroqChat(messages, {
         ...options,
@@ -282,11 +295,29 @@ export async function completeGroqTextChat(messages: GroqMessage[]) {
     allowToolFallback: false,
   })
   if (result.kind === 'text') return result.content
-  // Unexpected tool call without tools — treat content if any
   if (result.kind === 'tool_call') {
     return result.arguments || result.assistantText || ''
   }
   return ''
+}
+
+/** Vision / multimodal completion for meal photo analysis. */
+export async function completeGroqVisionChat(messages: GroqMessage[]) {
+  const model = process.env.GROQ_VISION_MODEL || DEFAULT_VISION_MODEL
+
+  const result = await runGroqChat(messages, {
+    toolChoice: 'none',
+    temperature: 0.2,
+    allowToolFallback: false,
+    model,
+    maxTokens: 800,
+    timeoutMs: 45_000,
+  })
+
+  if (result.kind !== 'text') {
+    throw new Error('Expected text response from Groq vision')
+  }
+  return result.content
 }
 
 export function getFailedGeneration(error: unknown): string | null {

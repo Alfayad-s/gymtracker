@@ -92,3 +92,23 @@ export async function uploadExerciseMedia(params: {
 
   return { url: result.secure_url, publicId: result.public_id }
 }
+
+export async function uploadMealPhoto(params: {
+  userId: string
+  mealKey: string
+  buffer: Buffer
+}): Promise<{ url: string; publicId: string }> {
+  const folder = `gymtrack/meals/${params.userId}`
+  const publicId = params.mealKey
+
+  const result = await uploadBuffer(params.buffer, {
+    folder,
+    public_id: publicId,
+    overwrite: true,
+    invalidate: true,
+    resource_type: 'image',
+    transformation: [{ width: 1200, height: 1200, crop: 'limit', quality: 'auto' }],
+  })
+
+  return { url: result.secure_url, publicId: result.public_id }
+}

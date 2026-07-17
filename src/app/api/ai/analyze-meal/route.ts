@@ -1,0 +1,136 @@
+import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import { createClient } from '@/utils/supabase/server'
+import { completeGroqVisionChat } from '@/lib/groq'
+
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
+const MealSuggestionSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  calories: z.number().min(0).max(10000),
+  proteinG: z.number().min(0).max(500),
+  carbsG: z.number().min(0).max(1000),
+  fatG: z.number().min(0).max(500),
+  notes: z.string().trim().max(300).optional(),
+  confidence: z.enum(['low', 'medium', 'high']).optional(),
+})
+
+export type MealAiSuggestion = z.infer<typeof MealSuggestionSchema>
+
+function parseSuggestion(raw: string): MealAiSuggestion | null {
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = fence?.[1]?.trim() || raw.trim()
+  const first = candidate.indexOf('{')
+  const last = candidate.lastIndexOf('}')
+  if (first < 0 || last <= first) return null
+
+  try {
+    const parsed = JSON.parse(candidate.slice(first, last + 1)) as Record<string, unknown>
+    const result = MealSuggestionSchema.safeParse({
+      name: typeof parsed.name === 'string' ? parsed.name : '',
+      calories: Number(parsed.calories) || 0,
+      proteinG: Number(parsed.proteinG ?? parsed.protein) || 0,
+      carbsG: Number(parsed.carbsG ?? parsed.carbs) || 0,
+      fatG: Number(parsed.fatG ?? parsed.fat) || 0,
+      notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
+      confidence:
+        parsed.confidence === 'low' ||
+        parsed.confidence === 'medium' ||
+        parsed.confidence === 'high'
+          ? parsed.confidence
+          : undefined,
+    })
+    if (!result.success) return null
+    return {
+      ...result.data,
+      calories: Math.round(result.data.calories),
+      proteinG: Math.round(result.data.proteinG),
+      carbsG: Math.round(result.data.carbsG),
+      fatG: Math.round(result.data.fatG),
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  let body: { imageUrl?: string; hint?: string }
+  try {
+    body = (await request.json()) as { imageUrl?: string; hint?: string }
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const imageUrl = typeof body.imageUrl === 'string' ? body.imageUrl.trim() : ''
+  if (!imageUrl) {
+    return NextResponse.json({ error: 'Meal photo URL is required' }, { status: 400 })
+  }
+
+  if (!/^https?:\/\//i.test(imageUrl) && !imageUrl.startsWith('data:image/')) {
+    return NextResponse.json({ error: 'Invalid image URL' }, { status: 400 })
+  }
+
+  const hint = typeof body.hint === 'string' ? body.hint.trim().slice(0, 200) : ''
+
+  const system = `You are a nutrition assistant for GymTrack.
+Look at the meal photo and estimate macros for a single serving shown.
+Return ONLY valid JSON (no markdown, no prose) with this shape:
+{
+  "name": string (short meal label, e.g. "Grilled chicken rice bowl"),
+  "calories": number,
+  "proteinG": number,
+  "carbsG": number,
+  "fatG": number,
+  "notes": string (optional short assumption, e.g. "Assumes 1 plate"),
+  "confidence": "low" | "medium" | "high"
+}
+Be realistic. Prefer whole numbers. If the food is unclear, still guess best-effort with confidence "low".`
+
+  const userText = hint
+    ? `Identify this meal and estimate macros. Extra context from user: ${hint}`
+    : 'Identify this meal and estimate calories plus protein, carbs, and fat for the portion shown.'
+
+  try {
+    const raw = await completeGroqVisionChat([
+      { role: 'system', content: system },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: userText },
+          { type: 'image_url', image_url: { url: imageUrl } },
+        ],
+      },
+    ])
+
+    const suggestion = parseSuggestion(raw)
+    if (!suggestion) {
+      return NextResponse.json(
+        { error: 'AI returned an invalid meal estimate. Try another photo.' },
+        { status: 422 }
+      )
+    }
+
+    return NextResponse.json({ suggestion })
+  } catch (error) {
+    console.error('Analyze meal failed:', error)
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'AI is unavailable right now. Please try again.',
+      },
+      { status: 503 }
+    )
+  }
+}

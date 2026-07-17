@@ -16,6 +16,7 @@ export type MealEntry = {
   carbsG: number
   fatG: number
   notes?: string
+  imageUrl?: string
   createdAt: string
 }
 
@@ -45,6 +46,15 @@ export function todayKey() {
   return format(new Date(), 'yyyy-MM-dd')
 }
 
+/** Pick meal type from local clock (breakfast → lunch → dinner → snack). */
+export function mealTypeFromTime(date = new Date()): MealType {
+  const hour = date.getHours()
+  if (hour < 11) return 'breakfast'
+  if (hour < 15) return 'lunch'
+  if (hour < 21) return 'dinner'
+  return 'snack'
+}
+
 export const useMealStore = create<MealState>()(
   persist(
     (set, get) => ({
@@ -63,6 +73,7 @@ export const useMealStore = create<MealState>()(
           carbsG: Math.max(0, Math.round(input.carbsG)),
           fatG: Math.max(0, Math.round(input.fatG)),
           notes: input.notes?.trim() || undefined,
+          imageUrl: input.imageUrl?.trim() || undefined,
           createdAt: new Date().toISOString(),
         }
         set((state) => ({ meals: [entry, ...state.meals].slice(0, 500) }))

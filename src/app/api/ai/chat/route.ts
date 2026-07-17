@@ -27,7 +27,7 @@ function cleanMessages(messages: GroqMessage[] | undefined): GroqMessage[] {
 
   return messages
     .filter(
-      (message) =>
+      (message): message is GroqMessage & { content: string } =>
         (message.role === 'user' || message.role === 'assistant') &&
         typeof message.content === 'string' &&
         message.content.trim().length > 0
@@ -168,7 +168,8 @@ export async function POST(request: Request) {
     { role: 'system', content: AGENT_SYSTEM_PROMPT },
     { role: 'system', content: buildContextBlock(context) },
   ]
-  const lastUserText = userMessages[userMessages.length - 1]?.content ?? ''
+  const lastContent = userMessages[userMessages.length - 1]?.content
+  const lastUserText = typeof lastContent === 'string' ? lastContent : ''
 
   try {
     const result = await completeGroqAgentChat(
