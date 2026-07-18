@@ -4,6 +4,7 @@ import { ensureProfile } from '@/lib/auth/ensure-profile'
 import {
   STATE_COOKIE,
   VERIFIER_COOKIE,
+  getSpotifyRedirectUri,
 } from '@/lib/spotify/pkce'
 import {
   exchangeAuthorizationCode,
@@ -13,7 +14,10 @@ import {
 
 export const runtime = 'nodejs'
 
-function appOrigin(request: NextRequest) {
+function originFrom(request: NextRequest) {
+  const proto = request.headers.get('x-forwarded-proto')
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host')
+  if (proto && host) return `${proto.split(',')[0].trim()}://${host.split(',')[0].trim()}`
   return (
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
     request.nextUrl.origin
@@ -21,7 +25,7 @@ function appOrigin(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const origin = appOrigin(request)
+  const origin = originFrom(request)
   const supabase = await createClient()
   const {
     data: { user },
@@ -43,6 +47,9 @@ export async function GET(request: NextRequest) {
 
   const verifier = request.cookies.get(VERIFIER_COOKIE)?.value
   const expectedState = request.cookies.get(STATE_COOKIE)?.value
+  const redirectUri =
+    request.cookies.get('spotify_redirect_uri')?.value ||
+    getSpotifyRedirectUri(origin)
 
   if (!code || !verifier || !state || !expectedState || state !== expectedState) {
     return NextResponse.redirect(
@@ -63,7 +70,11 @@ export async function GET(request: NextRequest) {
         null,
     })
 
-    const tokens = await exchangeAuthorizationCode({ code, codeVerifier: verifier })
+    const tokens = await exchangeAuthorizationCode({
+      code,
+      codeVerifier: verifier,
+      redirectUri,
+    })
     const profile = await fetchSpotifyProfile(tokens.access_token)
     await upsertConnection({
       userId: user.id,
@@ -77,6 +88,7 @@ export async function GET(request: NextRequest) {
     const res = NextResponse.redirect(`${origin}/spotify?connected=1`)
     res.cookies.set(VERIFIER_COOKIE, '', { path: '/', maxAge: 0 })
     res.cookies.set(STATE_COOKIE, '', { path: '/', maxAge: 0 })
+    res.cookies.set('spotify_redirect_uri', '', { path: '/', maxAge: 0 })
     return res
   } catch (err) {
     console.error('Spotify callback failed:', err)

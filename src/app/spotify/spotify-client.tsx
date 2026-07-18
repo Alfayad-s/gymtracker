@@ -12,7 +12,6 @@ import {
 } from '@/components/spotify/spotify-library'
 import {
   disconnectSpotifyAction,
-  getSpotifyConnectionAction,
   getSpotifyLibraryAction,
   type SpotifyLibraryPayload,
 } from '@/server/actions/spotify.actions'
@@ -33,16 +32,51 @@ export default function SpotifyPage() {
     setLoading(true)
     setError(null)
     try {
-      const conn = await getSpotifyConnectionAction()
+      // Prefer API route in production — clearer errors than digested server actions
+      const res = await fetch('/api/spotify/connection', { cache: 'no-store' })
+      const data = (await res.json().catch(() => ({}))) as
+        | SpotifyConnectionPublic
+        | { connected: false; error?: string }
+
+      if (!res.ok && 'error' in data && data.error) {
+        // Still allow Connect UI when not authorized / table missing
+        setConnection({ connected: false })
+        if (res.status !== 401) setError(data.error)
+        return
+      }
+
+      if (data && 'connected' in data && data.connected === false) {
+        setConnection({ connected: false })
+        setLibrary(null)
+        return
+      }
+
+      const conn = data as SpotifyConnectionPublic
       setConnection(conn)
+
       if (conn.connected) {
-        const lib = await getSpotifyLibraryAction()
-        setLibrary(lib)
+        try {
+          const lib = await getSpotifyLibraryAction()
+          setLibrary(lib)
+        } catch (libErr) {
+          setLibrary(null)
+          setError(
+            libErr instanceof Error
+              ? libErr.message
+              : 'Connected, but failed to load Spotify library'
+          )
+        }
       } else {
         setLibrary(null)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load Spotify')
+      setConnection({ connected: false })
+      const msg = err instanceof Error ? err.message : 'Failed to load Spotify'
+      if (!/server components render|digest|omitted in production/i.test(msg)) {
+        setError(msg)
+      } else {
+        setError('Unable to reach Spotify service. Try again or reconnect.')
+      }
     } finally {
       setLoading(false)
     }
@@ -54,8 +88,13 @@ export default function SpotifyPage() {
 
   useEffect(() => {
     const err = searchParams.get('error')
+    const connected = searchParams.get('connected')
     if (err) setError(decodeURIComponent(err))
-  }, [searchParams])
+    if (connected === '1') {
+      setError(null)
+      void load()
+    }
+  }, [searchParams, load])
 
   const refreshPlayback = () => {
     startTransition(async () => {

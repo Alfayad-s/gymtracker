@@ -13,9 +13,15 @@ export function getSpotifyClientId(): string {
   return id
 }
 
-export function getSpotifyRedirectUri(): string {
+export function getSpotifyRedirectUri(requestOrigin?: string): string {
+  // Prefer the live request origin so local / production hosts stay in sync.
+  if (requestOrigin) {
+    return `${requestOrigin.replace(/\/$/, '')}/api/spotify/callback`
+  }
+
   const explicit = process.env.SPOTIFY_REDIRECT_URI?.trim()
-  if (explicit) return explicit
+  if (explicit) return explicit.replace(/\/$/, '')
+
   const base =
     process.env.NEXT_PUBLIC_APP_URL?.trim() ||
     process.env.VERCEL_URL?.trim()

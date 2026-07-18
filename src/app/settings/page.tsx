@@ -10,10 +10,7 @@ import {
   getNotificationPermission,
   requestNotificationPermission,
 } from '@/lib/notifications'
-import {
-  disconnectSpotifyAction,
-  getSpotifyConnectionAction,
-} from '@/server/actions/spotify.actions'
+import { disconnectSpotifyAction } from '@/server/actions/spotify.actions'
 import type { SpotifyConnectionPublic } from '@/lib/spotify/types'
 
 export default function SettingsPage() {
@@ -36,8 +33,9 @@ export default function SettingsPage() {
   }, [])
 
   useEffect(() => {
-    void getSpotifyConnectionAction()
-      .then(setSpotify)
+    void fetch('/api/spotify/connection', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data: SpotifyConnectionPublic | { connected: false }) => setSpotify(data))
       .catch(() => setSpotify({ connected: false }))
   }, [])
 

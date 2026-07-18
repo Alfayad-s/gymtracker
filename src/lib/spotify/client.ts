@@ -67,11 +67,19 @@ export function rowToPublic(row: ConnectionRow): SpotifyConnectionPublic {
 }
 
 export async function getConnectionRow(userId: string): Promise<ConnectionRow | null> {
-  return (
-    (await db.query.spotifyConnections.findFirst({
-      where: eq(spotifyConnections.userId, userId),
-    })) ?? null
-  )
+  try {
+    const rows = await db
+      .select()
+      .from(spotifyConnections)
+      .where(eq(spotifyConnections.userId, userId))
+      .limit(1)
+    return rows[0] ?? null
+  } catch (error) {
+    console.error('[spotify] getConnectionRow failed:', error)
+    throw new Error(
+      'Could not load Spotify connection. If this persists, run db:push for spotify_connections.'
+    )
+  }
 }
 
 async function exchangeToken(body: URLSearchParams): Promise<TokenResponse> {
@@ -105,11 +113,12 @@ async function exchangeToken(body: URLSearchParams): Promise<TokenResponse> {
 export async function exchangeAuthorizationCode(params: {
   code: string
   codeVerifier: string
+  redirectUri?: string
 }): Promise<TokenResponse> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code: params.code,
-    redirect_uri: getSpotifyRedirectUri(),
+    redirect_uri: params.redirectUri || getSpotifyRedirectUri(),
     code_verifier: params.codeVerifier,
   })
   return exchangeToken(body)

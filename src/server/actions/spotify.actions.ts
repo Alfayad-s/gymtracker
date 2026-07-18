@@ -30,28 +30,56 @@ async function requireUserId() {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
-  await ensureProfile({
-    id: user.id,
-    fullName:
-      (user.user_metadata?.full_name as string | undefined) ||
-      (user.user_metadata?.name as string | undefined) ||
-      null,
-    avatarUrl:
-      (user.user_metadata?.avatar_url as string | undefined) ||
-      (user.user_metadata?.picture as string | undefined) ||
-      null,
-  })
+  if (!user) throw new Error('Please sign in to connect Spotify')
+  try {
+    await ensureProfile({
+      id: user.id,
+      fullName:
+        (user.user_metadata?.full_name as string | undefined) ||
+        (user.user_metadata?.name as string | undefined) ||
+        null,
+      avatarUrl:
+        (user.user_metadata?.avatar_url as string | undefined) ||
+        (user.user_metadata?.picture as string | undefined) ||
+        null,
+    })
+  } catch (error) {
+    console.error('[spotify] ensureProfile failed:', error)
+    // Profile ensure is best-effort — still allow Spotify if auth works
+  }
   return user.id
+}
+
+function friendlyError(error: unknown, fallback: string): Error {
+  if (error instanceof Error) {
+    const msg = error.message
+    // Next.js digests obscure real messages in production — keep ours explicit
+    if (
+      /server components render|digest|omitted in production/i.test(msg) ||
+      !msg.trim()
+    ) {
+      return new Error(fallback)
+    }
+    return error
+  }
+  return new Error(fallback)
 }
 
 export async function getSpotifyConnectionAction(): Promise<
   SpotifyConnectionPublic | { connected: false }
 > {
-  const userId = await requireUserId()
-  const row = await getConnectionRow(userId)
-  if (!row) return { connected: false }
-  return rowToPublic(row)
+  try {
+    const userId = await requireUserId()
+    const row = await getConnectionRow(userId)
+    if (!row) return { connected: false }
+    return rowToPublic(row)
+  } catch (error) {
+    console.error('[spotify] getSpotifyConnectionAction:', error)
+    throw friendlyError(
+      error,
+      'Unable to check Spotify connection. Confirm you are signed in and the database is up to date.'
+    )
+  }
 }
 
 export async function disconnectSpotifyAction(): Promise<{ ok: true }> {
