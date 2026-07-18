@@ -22,6 +22,7 @@ import { useProgressStore, computeBodyWeightStats } from '@/stores/progressStore
 import { useProfileStore } from '@/stores/profileStore'
 import { Button } from '@/components/ui/button'
 import { pushSyncBeforeLogout } from '@/components/sync/SyncProvider'
+import { ArHeightMeasureButton } from '@/components/profile/ArHeightMeasure'
 
 export default function ProfilePage() {
   const router = useRouter()
@@ -285,6 +286,14 @@ export default function ProfilePage() {
               Save
             </Button>
           </div>
+          <ArHeightMeasureButton
+            onEstimate={(cm) => {
+              setHeightInput(String(cm))
+            }}
+          />
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            AR estimate uses on-device pose detection. Confirm the value before saving.
+          </p>
         </div>
       )}
 
