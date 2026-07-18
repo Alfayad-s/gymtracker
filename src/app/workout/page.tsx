@@ -8,6 +8,7 @@ import {
   getSessionStats,
   findNextIncompleteSet,
   getSetContext,
+  getUpcomingExercises,
 } from '@/stores/workoutStore'
 import { useTimerStore } from '@/stores/timerStore'
 import { useHistoryStore } from '@/stores/historyStore'
@@ -18,7 +19,7 @@ import { RepPicker } from '@/components/workout/RepPicker'
 import { WorkoutRestCircle } from '@/components/workout/WorkoutRestCircle'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import { requestNotificationPermission, unlockRestSound } from '@/lib/notifications'
-import { Dumbbell, Plus, Check, Timer, Play, Flag, ChevronRight } from 'lucide-react'
+import { Dumbbell, Plus, Check, Timer, Play, Flag, ChevronRight, SkipForward, ListOrdered } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SpotifyMiniPlayer } from '@/components/spotify/spotify-mini-player'
 
@@ -42,6 +43,8 @@ export default function WorkoutPage() {
     updateSet,
     completeSet,
     startWorkout,
+    skipExercise,
+    doExerciseNow,
   } = useWorkoutStore()
   const addWorkout = useHistoryStore((s) => s.addWorkout)
   const recordSession = useRecoveryStore((s) => s.recordSession)
@@ -59,6 +62,7 @@ export default function WorkoutPage() {
   const [elapsedMs, setElapsedMs] = useState(0)
   const [showFinish, setShowFinish] = useState(false)
   const [showCancel, setShowCancel] = useState(false)
+  const [showUpNext, setShowUpNext] = useState(false)
   const [summary, setSummary] = useState<ReturnType<typeof finishWorkout> | null>(null)
   const [portalReady, setPortalReady] = useState(false)
 
@@ -116,6 +120,26 @@ export default function WorkoutPage() {
     if (!prev?.isCompleted) return null
     return `${prev.weight || 0} kg × ${prev.reps}`
   }, [setContext])
+
+  const upcomingExercises = useMemo(() => {
+    if (!activeSession || !currentSet) return []
+    return getUpcomingExercises(activeSession, currentSet.exerciseId)
+  }, [activeSession, currentSet])
+
+  const nextExerciseName = upcomingExercises[0]?.name ?? null
+
+  const handleSkipExercise = () => {
+    if (!currentSet) return
+    stopTimer()
+    skipExercise(currentSet.exerciseId)
+    setShowUpNext(false)
+  }
+
+  const handleDoExerciseNow = (exerciseId: string) => {
+    stopTimer()
+    doExerciseNow(exerciseId)
+    setShowUpNext(false)
+  }
 
   if (!activeSession) {
     if (summary) {
@@ -415,6 +439,13 @@ export default function WorkoutPage() {
                   {setContext.exercise.restSeconds ?? 90}s after set
                 </p>
               )}
+
+              {nextExerciseName && (
+                <p className="text-xs text-muted-foreground mt-4">
+                  Up next:{' '}
+                  <span className="font-semibold text-foreground">{nextExerciseName}</span>
+                </p>
+              )}
             </div>
 
             {/* Reps first, then weight to avoid horizontal overflow on mobile. */}
@@ -444,6 +475,29 @@ export default function WorkoutPage() {
                 Complete Set
                 <ChevronRight className="w-4 h-4" />
               </button>
+
+              {(upcomingExercises.length > 0 || activeSession.exercises.length > 1) && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSkipExercise}
+                    disabled={upcomingExercises.length === 0}
+                    className="flex-1 h-11 rounded-[16px] font-semibold text-sm flex items-center justify-center gap-1.5 bg-muted hover:bg-muted/80 text-foreground disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] transition-all"
+                  >
+                    <SkipForward className="w-4 h-4" />
+                    Skip
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowUpNext(true)}
+                    disabled={upcomingExercises.length === 0}
+                    className="flex-1 h-11 rounded-[16px] font-semibold text-sm flex items-center justify-center gap-1.5 bg-card border border-border hover:bg-muted/60 text-foreground disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] transition-all"
+                  >
+                    <ListOrdered className="w-4 h-4" />
+                    Do now
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : null}
@@ -481,6 +535,68 @@ export default function WorkoutPage() {
                   Finish
                 </Button>
               </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Up next / do now modal */}
+      {portalReady &&
+        showUpNext &&
+        createPortal(
+          <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[var(--overlay)] backdrop-blur-sm">
+            <div className="w-full sm:max-w-[430px] bg-card border-t border-border rounded-t-[28px] p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] space-y-4 shadow-2xl max-h-[75vh] flex flex-col">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Do this now</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Pick an upcoming exercise to switch to right away. Your current one stays in the
+                  queue.
+                </p>
+              </div>
+              <div className="overflow-y-auto space-y-2 flex-1 min-h-0">
+                {upcomingExercises.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">
+                    No other exercises left in this workout.
+                  </p>
+                ) : (
+                  upcomingExercises.map((ex, i) => {
+                    const remaining = ex.sets.filter((s) => !s.isCompleted).length
+                    return (
+                      <button
+                        key={ex.exerciseId}
+                        type="button"
+                        onClick={() => handleDoExerciseNow(ex.exerciseId)}
+                        className="w-full text-left rounded-[16px] border border-border bg-muted/40 hover:bg-muted px-4 py-3 active:scale-[0.99] transition-all"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                              {i === 0 ? 'Next' : `Later · ${i + 1}`}
+                            </p>
+                            <p className="text-sm font-bold text-foreground truncate mt-0.5">
+                              {ex.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {remaining} set{remaining === 1 ? '' : 's'} left
+                              {ex.equipment ? ` · ${ex.equipment}` : ''}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-xs font-bold text-primary flex items-center gap-1">
+                            Do now
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+              <Button
+                onClick={() => setShowUpNext(false)}
+                className="w-full h-12 rounded-[16px] bg-muted hover:bg-muted/80 text-foreground border-0"
+              >
+                Close
+              </Button>
             </div>
           </div>,
           document.body

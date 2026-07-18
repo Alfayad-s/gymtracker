@@ -57,6 +57,10 @@ type WorkoutState = {
   updateSet: (exerciseId: string, setIndex: number, fields: Partial<LoggedSet>) => void
   toggleSetCompletion: (exerciseId: string, setIndex: number) => boolean
   completeSet: (exerciseId: string, setIndex: number) => boolean
+  /** Move this exercise to the end so the next one becomes current. */
+  skipExercise: (exerciseId: string) => void
+  /** Pull this exercise to the front of remaining work (do it now). */
+  doExerciseNow: (exerciseId: string) => void
   setNotes: (notes: string) => void
   renameSession: (name: string) => void
 }
@@ -192,6 +196,17 @@ export function findNextIncompleteSet(
   }
 
   return null
+}
+
+/** Upcoming exercises that still have incomplete sets (excluding the current one). */
+export function getUpcomingExercises(
+  session: ActiveSession,
+  currentExerciseId?: string
+): LoggedExercise[] {
+  return session.exercises.filter((ex) => {
+    if (currentExerciseId && ex.exerciseId === currentExerciseId) return false
+    return ex.sets.some((s) => !s.isCompleted)
+  })
 }
 
 export const useWorkoutStore = create<WorkoutState>()(
@@ -369,6 +384,42 @@ export const useWorkoutStore = create<WorkoutState>()(
 
         return true
       },
+
+      skipExercise: (exerciseId) =>
+        set((state) => {
+          if (!state.activeSession) return {}
+          const exercises = [...state.activeSession.exercises]
+          const fromIdx = exercises.findIndex((e) => e.exerciseId === exerciseId)
+          if (fromIdx < 0) return {}
+          // Already last with nothing after that has work? still move to end is fine
+          const [item] = exercises.splice(fromIdx, 1)
+          exercises.push(item)
+          return {
+            activeSession: { ...state.activeSession, exercises },
+          }
+        }),
+
+      doExerciseNow: (exerciseId) =>
+        set((state) => {
+          if (!state.activeSession) return {}
+          const exercises = [...state.activeSession.exercises]
+          const fromIdx = exercises.findIndex((e) => e.exerciseId === exerciseId)
+          if (fromIdx < 0) return {}
+
+          const next = findNextIncompleteSet(state.activeSession)
+          const toIdx = next
+            ? exercises.findIndex((e) => e.exerciseId === next.exerciseId)
+            : 0
+          if (toIdx < 0 || fromIdx === toIdx) return {}
+
+          const [item] = exercises.splice(fromIdx, 1)
+          const insertAt = fromIdx < toIdx ? toIdx - 1 : toIdx
+          exercises.splice(Math.max(0, insertAt), 0, item)
+
+          return {
+            activeSession: { ...state.activeSession, exercises },
+          }
+        }),
 
       setNotes: (notes) =>
         set((state) => {
