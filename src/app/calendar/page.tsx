@@ -21,10 +21,12 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Coffee,
   Dumbbell,
   Flame,
 } from 'lucide-react'
 import { useHistoryStore, type CompletedWorkout } from '@/stores/historyStore'
+import { usePlanStore } from '@/stores/planStore'
 import { formatVolumeKg, getActiveStreakDays } from '@/lib/workout-analytics'
 
 function waitForStoreHydration(store: {
@@ -55,16 +57,25 @@ function mondayFirstPad(date: Date) {
   return jsDay === 0 ? 6 : jsDay - 1
 }
 
+function toPlanDayOfWeek(date: Date) {
+  const jsDay = getDay(date)
+  return jsDay === 0 ? 7 : jsDay
+}
+
 export default function CalendarPage() {
   const router = useRouter()
   const workouts = useHistoryStore((s) => s.workouts)
+  const plans = usePlanStore((s) => s.plans)
   const [hydrated, setHydrated] = useState(false)
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()))
   const [selectedDay, setSelectedDay] = useState<Date>(() => startOfDay(new Date()))
 
   useEffect(() => {
     let cancelled = false
-    waitForStoreHydration(useHistoryStore).then(() => {
+    void Promise.all([
+      waitForStoreHydration(useHistoryStore),
+      waitForStoreHydration(usePlanStore),
+    ]).then(() => {
       if (!cancelled) setHydrated(true)
     })
     return () => {
@@ -73,6 +84,23 @@ export default function CalendarPage() {
   }, [])
 
   const today = startOfDay(new Date())
+
+  const activePlan = useMemo(
+    () => plans.find((p) => p.isActive) ?? plans[0] ?? null,
+    [plans]
+  )
+
+  /** Weekdays (1–7) marked as rest in the active plan — applies to every matching date. */
+  const restWeekdays = useMemo(() => {
+    const set = new Set<number>()
+    if (!activePlan) return set
+    for (const day of activePlan.days) {
+      if (day.dayOfWeek != null && day.isRestDay) set.add(day.dayOfWeek)
+    }
+    return set
+  }, [activePlan])
+
+  const isPlanRestDay = (date: Date) => restWeekdays.has(toPlanDayOfWeek(date))
 
   const workoutsByDay = useMemo(() => {
     const map = new Map<string, CompletedWorkout[]>()
@@ -96,6 +124,7 @@ export default function CalendarPage() {
   const monthStats = useMemo(() => {
     let workoutDays = 0
     let missedDays = 0
+    let restDays = 0
     let totalWorkouts = 0
     let totalVolume = 0
     let totalMinutes = 0
@@ -103,6 +132,8 @@ export default function CalendarPage() {
     for (const day of monthDays) {
       const key = format(day, 'yyyy-MM-dd')
       const dayWorkouts = workoutsByDay.get(key) ?? []
+      const isRest = isPlanRestDay(day)
+
       if (dayWorkouts.length > 0) {
         workoutDays += 1
         totalWorkouts += dayWorkouts.length
@@ -110,27 +141,34 @@ export default function CalendarPage() {
           totalVolume += w.volumeKg
           totalMinutes += w.durationMinutes
         }
-      } else if (isBefore(day, today) || isSameDay(day, today)) {
-        // Past days without a session (exclude today from "missed" count if still in progress)
-        if (isBefore(day, today)) missedDays += 1
+      } else if (isRest) {
+        restDays += 1
+      } else if (isBefore(day, today)) {
+        missedDays += 1
       }
     }
 
-    return { workoutDays, missedDays, totalWorkouts, totalVolume, totalMinutes }
-  }, [monthDays, workoutsByDay, today])
+    return { workoutDays, missedDays, restDays, totalWorkouts, totalVolume, totalMinutes }
+  }, [monthDays, workoutsByDay, today, restWeekdays])
 
   const selectedKey = format(selectedDay, 'yyyy-MM-dd')
   const selectedWorkouts = workoutsByDay.get(selectedKey) ?? []
   const streakDays = hydrated ? getActiveStreakDays(workouts) : 0
+  const selectedPlanDay = useMemo(() => {
+    if (!activePlan) return null
+    const dow = toPlanDayOfWeek(selectedDay)
+    return activePlan.days.find((d) => d.dayOfWeek === dow) ?? null
+  }, [activePlan, selectedDay])
 
   const dayTone = (day: Date) => {
     const key = format(day, 'yyyy-MM-dd')
     const hasWorkout = (workoutsByDay.get(key)?.length ?? 0) > 0
     const isFuture = isAfter(day, today)
+    const isRest = isPlanRestDay(day)
 
     if (hasWorkout) return 'workout' as const
+    if (isRest) return 'rest' as const
     if (isFuture) return 'future' as const
-    // Past + today with no completed session → red
     return 'missed' as const
   }
 
@@ -210,9 +248,11 @@ export default function CalendarPage() {
                 const toneClass =
                   tone === 'workout'
                     ? 'bg-primary text-primary-foreground shadow-md shadow-primary/25'
-                    : tone === 'missed'
-                      ? 'bg-destructive/20 border border-destructive/50 text-destructive'
-                      : 'bg-muted/40 border border-border text-muted-foreground'
+                    : tone === 'rest'
+                      ? 'bg-sky-500/20 border border-sky-500/40 text-sky-500'
+                      : tone === 'missed'
+                        ? 'bg-destructive/20 border border-destructive/50 text-destructive'
+                        : 'bg-muted/40 border border-border text-muted-foreground'
 
                 return (
                   <button
@@ -228,9 +268,14 @@ export default function CalendarPage() {
                       selected ? 'ring-2 ring-offset-2 ring-offset-background ring-foreground/40' : ''
                     } ${isSameDay(day, today) && tone === 'missed' ? 'ring-1 ring-destructive/60' : ''} ${
                       isSameDay(day, today) && tone === 'workout' ? 'ring-1 ring-primary' : ''
-                    }`}
+                    } ${isSameDay(day, today) && tone === 'rest' ? 'ring-1 ring-sky-500/60' : ''}`}
                   >
-                    <span>{format(day, 'd')}</span>
+                    {tone === 'rest' && count === 0 ? (
+                      <Coffee className="w-3.5 h-3.5 mb-0.5" />
+                    ) : null}
+                    <span className={tone === 'rest' && count === 0 ? 'text-[10px]' : ''}>
+                      {format(day, 'd')}
+                    </span>
                     {count > 1 && (
                       <span className="absolute bottom-1 text-[8px] font-bold opacity-90">
                         {count}
@@ -244,6 +289,9 @@ export default function CalendarPage() {
             <div className="flex flex-wrap items-center justify-center gap-3 pt-1 text-[10px] font-medium">
               <span className="flex items-center gap-1.5 text-primary">
                 <span className="w-2.5 h-2.5 rounded-full bg-primary" /> Workout
+              </span>
+              <span className="flex items-center gap-1.5 text-sky-500">
+                <span className="w-2.5 h-2.5 rounded-full bg-sky-500/80" /> Rest
               </span>
               <span className="flex items-center gap-1.5 text-destructive">
                 <span className="w-2.5 h-2.5 rounded-full bg-destructive/70" /> No workout
@@ -262,10 +310,10 @@ export default function CalendarPage() {
               <p className="text-[10px] text-muted-foreground">Trained</p>
             </div>
             <div className="bg-card border border-border rounded-[18px] p-3 text-center">
-              <p className="text-lg font-bold text-destructive tabular-nums">
-                {monthStats.missedDays}
+              <p className="text-lg font-bold text-sky-500 tabular-nums">
+                {monthStats.restDays}
               </p>
-              <p className="text-[10px] text-muted-foreground">Off days</p>
+              <p className="text-[10px] text-muted-foreground">Rest days</p>
             </div>
             <div className="bg-card border border-border rounded-[18px] p-3 text-center">
               <p className="text-lg font-bold text-warning tabular-nums flex items-center justify-center gap-1">
@@ -284,9 +332,11 @@ export default function CalendarPage() {
               <span className="text-[10px] text-muted-foreground">
                 {selectedWorkouts.length > 0
                   ? `${selectedWorkouts.length} session${selectedWorkouts.length === 1 ? '' : 's'}`
-                  : dayTone(selectedDay) === 'future'
-                    ? 'Upcoming'
-                    : 'No workout'}
+                  : dayTone(selectedDay) === 'rest'
+                    ? 'Rest day'
+                    : dayTone(selectedDay) === 'future'
+                      ? 'Upcoming'
+                      : 'No workout'}
               </span>
             </div>
 
@@ -295,21 +345,47 @@ export default function CalendarPage() {
                 className={`rounded-[20px] border p-4 ${
                   dayTone(selectedDay) === 'missed'
                     ? 'border-destructive/30 bg-destructive/10'
-                    : 'border-border bg-card'
+                    : dayTone(selectedDay) === 'rest'
+                      ? 'border-sky-500/30 bg-sky-500/10'
+                      : 'border-border bg-card'
                 }`}
               >
-                <p className="text-sm font-bold text-foreground">
-                  {dayTone(selectedDay) === 'future'
-                    ? 'Day not reached yet'
-                    : isSameDay(selectedDay, today)
-                      ? 'No session logged today'
-                      : 'Rest / missed day'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  {dayTone(selectedDay) === 'future'
-                    ? 'Future days stay neutral until they pass.'
-                    : 'Days without a completed workout show in red on the calendar.'}
-                </p>
+                <div className="flex items-start gap-3">
+                  {dayTone(selectedDay) === 'rest' && (
+                    <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/25 flex items-center justify-center shrink-0">
+                      <Coffee className="w-4 h-4 text-sky-500" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-foreground">
+                      {dayTone(selectedDay) === 'rest'
+                        ? selectedPlanDay?.name || 'Rest Day'
+                        : dayTone(selectedDay) === 'future'
+                          ? 'Day not reached yet'
+                          : isSameDay(selectedDay, today)
+                            ? 'No session logged today'
+                            : 'Missed training day'}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                      {dayTone(selectedDay) === 'rest'
+                        ? 'Scheduled rest from your active plan — every matching weekday is a rest day.'
+                        : dayTone(selectedDay) === 'future'
+                          ? 'Future days stay neutral until they pass.'
+                          : 'Days without a completed workout show in red on the calendar.'}
+                    </p>
+                  </div>
+                </div>
+                {dayTone(selectedDay) === 'rest' && activePlan && selectedPlanDay && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(`/plans/${activePlan.id}/days/${selectedPlanDay.id}`)
+                    }
+                    className="mt-3 h-10 px-4 rounded-[14px] border border-sky-500/30 bg-sky-500/15 text-sky-500 text-xs font-bold cursor-pointer"
+                  >
+                    View plan day
+                  </button>
+                )}
                 {dayTone(selectedDay) === 'missed' && (
                   <button
                     type="button"

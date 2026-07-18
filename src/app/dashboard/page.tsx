@@ -19,6 +19,8 @@ import {
   PartyPopper,
   Apple,
   UtensilsCrossed,
+  CalendarDays,
+  ListChecks,
 } from 'lucide-react'
 import {
   format,
@@ -803,25 +805,35 @@ export default function DashboardPage() {
             <span>{format(clock, 'EEEE, d MMMM')}</span>
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => router.push('/profile')}
-          className="w-12 h-12 rounded-full bg-card border border-border overflow-hidden flex items-center justify-center cursor-pointer shrink-0"
-          aria-label="Profile"
-        >
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt=""
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <span className="text-sm font-bold text-primary">
-              {firstName.slice(0, 1).toUpperCase()}
-            </span>
-          )}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => router.push('/calendar')}
+            className="w-12 h-12 rounded-full bg-card border border-border flex items-center justify-center cursor-pointer active:scale-95"
+            aria-label="Open calendar"
+          >
+            <CalendarDays className="w-5 h-5 text-foreground" />
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/profile')}
+            className="w-12 h-12 rounded-full bg-card border border-border overflow-hidden flex items-center justify-center cursor-pointer shrink-0"
+            aria-label="Profile"
+          >
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarUrl}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="text-sm font-bold text-primary">
+                {firstName.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       <InstallPrompt />
@@ -942,17 +954,30 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => router.push('/history')}
-                className="flex-1 h-[48px] rounded-[16px] border border-border bg-muted text-sm font-bold text-foreground cursor-pointer active:scale-[0.98]"
-              >
-                View History
-              </button>
+              {activePlan && todayDay ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(`/plans/${activePlan.id}/days/${todayDay.id}`)
+                  }
+                  className="flex-1 h-[48px] rounded-[16px] border border-border bg-muted text-sm font-bold text-foreground flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98]"
+                >
+                  <ListChecks className="w-3.5 h-3.5" />
+                  View Plan
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => router.push('/history')}
+                  className="flex-1 h-[48px] rounded-[16px] border border-border bg-muted text-sm font-bold text-foreground cursor-pointer active:scale-[0.98]"
+                >
+                  View History
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleContinue}
-                className="flex-1 h-[48px] rounded-[16px] bg-primary text-primary-foreground text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] shadow-lg shadow-primary/20"
+                className="flex-1 h-[48px] rounded-[16px] bg-primary text-primary-foreground text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98]"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
                 Another Session
@@ -1058,15 +1083,29 @@ export default function DashboardPage() {
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={handleContinue}
-              className="mt-4 w-full h-[52px] bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-[18px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer shadow-lg shadow-primary/20"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              {activeSession ? 'Continue Workout' : 'Start Workout'}
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            <div className="flex gap-2 mt-4">
+              {activePlan && todayDay && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(`/plans/${activePlan.id}/days/${todayDay.id}`)
+                  }
+                  className="flex-1 h-[52px] rounded-[18px] border border-border bg-muted text-sm font-bold text-foreground flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98]"
+                >
+                  <ListChecks className="w-4 h-4" />
+                  View Plan
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleContinue}
+                className={`${activePlan && todayDay ? 'flex-1' : 'w-full'} h-[52px] bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-[18px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer`}
+              >
+                <Play className="w-4 h-4 fill-current" />
+                {activeSession ? 'Continue' : 'Start Workout'}
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
           </>
         ) : (
           <div className="space-y-4">
@@ -1094,13 +1133,26 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => router.push('/plans')}
-                className="flex-1 h-11 rounded-[14px] border border-border bg-muted text-sm font-bold text-foreground cursor-pointer"
-              >
-                {activePlan ? 'View Plan' : 'Set Up Plan'}
-              </button>
+              {activePlan && todayDay?.isRestDay ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(`/plans/${activePlan.id}/days/${todayDay.id}`)
+                  }
+                  className="flex-1 h-11 rounded-[14px] border border-border bg-muted text-sm font-bold text-foreground flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <ListChecks className="w-3.5 h-3.5" />
+                  View Plan
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => router.push('/plans')}
+                  className="flex-1 h-11 rounded-[14px] border border-border bg-muted text-sm font-bold text-foreground cursor-pointer"
+                >
+                  {activePlan ? 'View Plan' : 'Set Up Plan'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleContinue}
