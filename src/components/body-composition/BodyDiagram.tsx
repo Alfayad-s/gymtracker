@@ -1,59 +1,108 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { BodyCompositionReport } from '@/lib/body-composition/types'
 import { segmentStatuses, STATUS_COLOR, type SegmentKey } from '@/lib/body-composition/segment-status'
 import { formatMetric } from '@/lib/body-composition/metrics'
+
+/** Silhouette path from /public/human-body.svg (viewBox 0 0 206.326 206.326) */
+const BODY_PATH =
+  'M104.265,117.959c-0.304,3.58,2.126,22.529,3.38,29.959c0.597,3.52,2.234,9.255,1.645,12.3c-0.841,4.244-1.084,9.736-0.621,12.934c0.292,1.942,1.211,10.899-0.104,14.175c-0.688,1.718-1.949,10.522-1.949,10.522c-3.285,8.294-1.431,7.886-1.431,7.886c1.017,1.248,2.759,0.098,2.759,0.098c1.327,0.846,2.246-0.201,2.246-0.201c1.139,0.943,2.467-0.116,2.467-0.116c1.431,0.743,2.758-0.627,2.758-0.627c0.822,0.414,1.023-0.109,1.023-0.109c2.466-0.158-1.376-8.05-1.376-8.05c-0.92-7.088,0.913-11.033,0.913-11.033c6.004-17.805,6.309-22.53,3.909-29.24c-0.676-1.937-0.847-2.704-0.536-3.545c0.719-1.941,0.195-9.748,1.072-12.848c1.692-5.979,3.361-21.142,4.231-28.217c1.169-9.53-4.141-22.308-4.141-22.308c-1.163-5.2,0.542-23.727,0.542-23.727c2.381,3.705,2.29,10.245,2.29,10.245c-0.378,6.859,5.541,17.342,5.541,17.342c2.844,4.332,3.921,8.442,3.921,8.747c0,1.248-0.273,4.269-0.273,4.269l0.109,2.631c0.049,0.67,0.426,2.977,0.365,4.092c-0.444,6.862,0.646,5.571,0.646,5.571c0.92,0,1.931-5.522,1.931-5.522c0,1.424-0.348,5.687,0.42,7.295c0.919,1.918,1.595-0.329,1.607-0.78c0.243-8.737,0.768-6.448,0.768-6.448c0.511,7.088,1.139,8.689,2.265,8.135c0.853-0.407,0.073-8.506,0.073-8.506c1.461,4.811,2.569,5.577,2.569,5.577c2.411,1.693,0.92-2.983,0.585-3.909c-1.784-4.92-1.839-6.625-1.839-6.625c2.229,4.421,3.909,4.257,3.909,4.257c2.174-0.694-1.9-6.954-4.287-9.953c-1.218-1.528-2.789-3.574-3.245-4.789c-0.743-2.058-1.304-8.674-1.304-8.674c-0.225-7.807-2.155-11.198-2.155-11.198c-3.3-5.282-3.921-15.135-3.921-15.135l-0.146-16.635c-1.157-11.347-9.518-11.429-9.518-11.429c-8.451-1.258-9.627-3.988-9.627-3.988c-1.79-2.576-0.767-7.514-0.767-7.514c1.485-1.208,2.058-4.415,2.058-4.415c2.466-1.891,2.345-4.658,1.206-4.628c-0.914,0.024-0.707-0.733-0.707-0.733C115.068,0.636,104.01,0,104.01,0h-1.688c0,0-11.063,0.636-9.523,13.089c0,0,0.207,0.758-0.715,0.733c-1.136-0.03-1.242,2.737,1.215,4.628c0,0,0.572,3.206,2.058,4.415c0,0,1.023,4.938-0.767,7.514c0,0-1.172,2.73-9.627,3.988c0,0-8.375,0.082-9.514,11.429l-0.158,16.635c0,0-0.609,9.853-3.922,15.135c0,0-1.921,3.392-2.143,11.198c0,0-0.563,6.616-1.303,8.674c-0.451,1.209-2.021,3.255-3.249,4.789c-2.408,2.993-6.455,9.24-4.29,9.953c0,0,1.689,0.164,3.909-4.257c0,0-0.046,1.693-1.827,6.625c-0.35,0.914-1.839,5.59,0.573,3.909c0,0,1.117-0.767,2.569-5.577c0,0-0.779,8.099,0.088,8.506c1.133,0.555,1.751-1.047,2.262-8.135c0,0,0.524-2.289,0.767,6.448c0.012,0.451,0.673,2.698,1.596,0.78c0.779-1.608,0.429-5.864,0.429-7.295c0,0,0.999,5.522,1.933,5.522c0,0,1.099,1.291,0.648-5.571c-0.073-1.121,0.32-3.422,0.369-4.092l0.106-2.631c0,0-0.274-3.014-0.274-4.269c0-0.311,1.078-4.415,3.921-8.747c0,0,5.913-10.488,5.532-17.342c0,0-0.082-6.54,2.299-10.245c0,0,1.69,18.526,0.545,23.727c0,0-5.319,12.778-4.146,22.308c0.864,7.094,2.53,22.237,4.226,28.217c0.886,3.094,0.362,10.899,1.072,12.848c0.32,0.847,0.152,1.627-0.536,3.545c-2.387,6.71-2.083,11.436,3.921,29.24c0,0,1.848,3.945,0.914,11.033c0,0-3.836,7.892-1.379,8.05c0,0,0.192,0.523,1.023,0.109c0,0,1.327,1.37,2.761,0.627c0,0,1.328,1.06,2.463,0.116c0,0,0.91,1.047,2.237,0.201c0,0,1.742,1.175,2.777-0.098c0,0,1.839,0.408-1.435-7.886c0,0-1.254-8.793-1.945-10.522c-1.318-3.275-0.387-12.251-0.106-14.175c0.453-3.216,0.21-8.695-0.618-12.934c-0.606-3.038,1.035-8.774,1.641-12.3c1.245-7.423,3.685-26.373,3.38-29.959l1.008,0.354C103.809,118.312,104.265,117.959,104.265,117.959z'
+
+/** Paint order: trunk first, limbs on top so side hits register correctly. */
+const SEGMENTS: {
+  key: SegmentKey
+  x: number
+  y: number
+  width: number
+  height: number
+}[] = [
+  { key: 'trunk', x: 78, y: 26, width: 50, height: 90 },
+  { key: 'leftArm', x: 38, y: 28, width: 44, height: 82 },
+  { key: 'rightArm', x: 124, y: 28, width: 44, height: 82 },
+  { key: 'leftLeg', x: 72, y: 112, width: 31, height: 94 },
+  { key: 'rightLeg', x: 103, y: 112, width: 31, height: 94 },
+]
 
 export function BodyDiagram({ report }: { report: BodyCompositionReport }) {
   const statuses = segmentStatuses(report.segmentalLean, report.segmentalFat)
   const [selected, setSelected] = useState<SegmentKey | null>('trunk')
   const active = selected ? statuses[selected] : null
+  const selectedRegion = selected ? SEGMENTS.find((s) => s.key === selected) : null
+  const clipId = useId().replace(/:/g, '')
 
   return (
     <div className="rounded-[24px] border border-border/60 bg-card/60 backdrop-blur-md p-4 space-y-4">
       <div className="flex justify-center">
-        <svg viewBox="0 0 200 420" className="w-[180px] max-h-[320px]" aria-label="Body segments">
-          {/* Head */}
-          <ellipse cx="100" cy="36" rx="28" ry="34" fill="var(--muted)" opacity={0.5} />
-          {/* Trunk */}
+        <svg
+          viewBox="0 0 206.326 206.326"
+          className="w-[200px] max-h-[280px]"
+          aria-label="Body segmental analysis"
+          role="img"
+        >
+          <defs>
+            <clipPath id={`body-clip-${clipId}`}>
+              <path d={BODY_PATH} />
+            </clipPath>
+          </defs>
+
+          {/* Base silhouette */}
+          <path d={BODY_PATH} fill="var(--muted)" opacity={0.4} />
+
+          {/* Colored segments clipped to the human-body outline */}
+          <g clipPath={`url(#body-clip-${clipId})`}>
+            {SEGMENTS.map(({ key, x, y, width, height }) => {
+              const isSelected = selected === key
+              return (
+                <rect
+                  key={key}
+                  x={x}
+                  y={y}
+                  width={width}
+                  height={height}
+                  fill={STATUS_COLOR[statuses[key].status]}
+                  opacity={isSelected ? 0.95 : 0.68}
+                  className="cursor-pointer transition-opacity duration-200 outline-none"
+                  onClick={() => setSelected(key)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={statuses[key].label}
+                  aria-pressed={isSelected}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelected(key)
+                    }
+                  }}
+                />
+              )
+            })}
+          </g>
+
+          {/* Outline for definition */}
           <path
-            d="M62 78 L138 78 L148 210 L52 210 Z"
-            fill={STATUS_COLOR[statuses.trunk.status]}
-            opacity={0.85}
-            className="cursor-pointer"
-            onClick={() => setSelected('trunk')}
+            d={BODY_PATH}
+            fill="none"
+            stroke="var(--foreground)"
+            strokeOpacity={0.2}
+            strokeWidth={0.9}
+            pointerEvents="none"
           />
-          {/* Arms */}
-          <path
-            d="M62 82 L38 88 L22 190 L44 194 L62 120 Z"
-            fill={STATUS_COLOR[statuses.leftArm.status]}
-            opacity={0.9}
-            className="cursor-pointer"
-            onClick={() => setSelected('leftArm')}
-          />
-          <path
-            d="M138 82 L162 88 L178 190 L156 194 L138 120 Z"
-            fill={STATUS_COLOR[statuses.rightArm.status]}
-            opacity={0.9}
-            className="cursor-pointer"
-            onClick={() => setSelected('rightArm')}
-          />
-          {/* Legs */}
-          <path
-            d="M52 210 L92 210 L88 390 L58 390 Z"
-            fill={STATUS_COLOR[statuses.leftLeg.status]}
-            opacity={0.9}
-            className="cursor-pointer"
-            onClick={() => setSelected('leftLeg')}
-          />
-          <path
-            d="M108 210 L148 210 L142 390 L112 390 Z"
-            fill={STATUS_COLOR[statuses.rightLeg.status]}
-            opacity={0.9}
-            className="cursor-pointer"
-            onClick={() => setSelected('rightLeg')}
-          />
+
+          {selectedRegion && (
+            <rect
+              x={selectedRegion.x}
+              y={selectedRegion.y}
+              width={selectedRegion.width}
+              height={selectedRegion.height}
+              fill="none"
+              stroke="var(--foreground)"
+              strokeOpacity={0.35}
+              strokeWidth={1.2}
+              clipPath={`url(#body-clip-${clipId})`}
+              pointerEvents="none"
+            />
+          )}
         </svg>
       </div>
 
