@@ -49,7 +49,7 @@ export type GroqChatResult =
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const DEFAULT_MODEL = 'llama-3.1-8b-instant'
-const DEFAULT_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct'
+const DEFAULT_VISION_MODEL = 'qwen/qwen3.6-27b'
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504])
 const KEY_COOLDOWN_MS = 60_000
 const keyCooldownUntil = new Map<string, number>()
@@ -111,6 +111,7 @@ async function callGroq(params: {
   temperature?: number
   model?: string
   maxTokens?: number
+  reasoningEffort?: 'none' | 'default' | 'low' | 'medium' | 'high'
   signal: AbortSignal
 }) {
   const body: Record<string, unknown> = {
@@ -122,6 +123,9 @@ async function callGroq(params: {
   if (params.tools?.length) {
     body.tools = params.tools
     body.tool_choice = params.toolChoice ?? 'auto'
+  }
+  if (params.reasoningEffort) {
+    body.reasoning_effort = params.reasoningEffort
   }
 
   const response = await fetch(GROQ_URL, {
@@ -165,6 +169,7 @@ type RunOptions = {
   model?: string
   maxTokens?: number
   timeoutMs?: number
+  reasoningEffort?: 'none' | 'default' | 'low' | 'medium' | 'high'
 }
 
 async function runGroqChat(
@@ -199,6 +204,7 @@ async function runGroqChat(
         temperature: options.temperature,
         model: options.model,
         maxTokens: options.maxTokens,
+        reasoningEffort: options.reasoningEffort,
         signal: controller.signal,
       })
 
@@ -312,6 +318,8 @@ export async function completeGroqVisionChat(messages: GroqMessage[]) {
     model,
     maxTokens: 800,
     timeoutMs: 45_000,
+    // Qwen 3.6 supports reasoning_effort=none for clean JSON (no thinking tokens).
+    reasoningEffort: 'none',
   })
 
   if (result.kind !== 'text') {

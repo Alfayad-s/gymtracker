@@ -19,8 +19,13 @@ const MealSuggestionSchema = z.object({
 export type MealAiSuggestion = z.infer<typeof MealSuggestionSchema>
 
 function parseSuggestion(raw: string): MealAiSuggestion | null {
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  const candidate = fence?.[1]?.trim() || raw.trim()
+  // Strip optional Qwen thinking / reasoning wrappers if present.
+  const cleaned = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+    .trim()
+  const fence = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = fence?.[1]?.trim() || cleaned
   const first = candidate.indexOf('{')
   const last = candidate.lastIndexOf('}')
   if (first < 0 || last <= first) return null
@@ -123,14 +128,11 @@ Be realistic. Prefer whole numbers. If the food is unclear, still guess best-eff
     return NextResponse.json({ suggestion })
   } catch (error) {
     console.error('Analyze meal failed:', error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'AI is unavailable right now. Please try again.',
-      },
-      { status: 503 }
-    )
+    const message =
+      error instanceof Error ? error.message : 'AI is unavailable right now. Please try again.'
+    const friendly = /does not exist|do not have access|model_not_found/i.test(message)
+      ? 'Vision model is unavailable. Try again later or fill macros manually.'
+      : message
+    return NextResponse.json({ error: friendly }, { status: 503 })
   }
 }
