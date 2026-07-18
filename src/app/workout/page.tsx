@@ -20,6 +20,7 @@ import { useWakeLock } from '@/hooks/useWakeLock'
 import { requestNotificationPermission, unlockRestSound } from '@/lib/notifications'
 import { Dumbbell, Plus, Check, Timer, Play, Flag, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SpotifyMiniPlayer } from '@/components/spotify/spotify-mini-player'
 
 function formatElapsed(ms: number) {
   const totalSec = Math.floor(ms / 1000)
@@ -418,6 +419,7 @@ export default function WorkoutPage() {
 
             {/* Reps first, then weight to avoid horizontal overflow on mobile. */}
             <div className="space-y-3 mt-auto">
+              <SpotifyMiniPlayer compact />
               <div className="space-y-2.5">
                 <RepPicker
                   value={setContext.set.reps}

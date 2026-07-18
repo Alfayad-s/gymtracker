@@ -16,6 +16,7 @@ import {
   Ruler,
   Camera,
   ScanLine,
+  Music2,
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -94,6 +95,7 @@ export default function ProfilePage() {
     { name: 'Exercise Library', href: '/exercises', icon: Library, color: 'text-primary', bg: 'bg-primary/10' },
     { name: 'Personal Records', href: '/personal-records', icon: Award, color: 'text-primary', bg: 'bg-primary/10' },
     { name: 'Workout Calendar', href: '/calendar', icon: Calendar, color: 'text-primary', bg: 'bg-primary/10' },
+    { name: 'Spotify', href: '/spotify', icon: Music2, color: 'text-[#1DB954]', bg: 'bg-[#1DB954]/10' },
     { name: 'Settings', href: '/settings', icon: Settings, color: 'text-muted-foreground', bg: 'bg-muted' },
   ]
 
