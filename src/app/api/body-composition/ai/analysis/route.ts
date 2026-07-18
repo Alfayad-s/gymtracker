@@ -38,9 +38,26 @@ export async function POST(request: Request) {
     const analysis = await completeGroqTextChat([
       {
         role: 'system',
-        content: `You are GymTrack's body composition coach. Write a personalized analysis with short sections:
-Overall health score narrative, Muscle balance, Fat distribution, Body composition summary, Training recommendations, Recovery suggestions, Nutrition suggestions, Risk factors, Improvement priority.
-Use markdown headings. Be specific to the numbers. Keep under 700 words.`,
+        content: `You are GymTrack's body composition coach. Write a personalized analysis using these exact markdown headings (## Title), in this order when data allows:
+
+## Overall Health
+## BMI Assessment
+## Muscle Balance
+## Fat Distribution
+## Body Composition Summary
+## Training Recommendations
+## Recovery Suggestions
+## Nutrition Suggestions
+## Risk Factors
+## Improvement Priority
+
+Rules:
+- Use ## headings only (never wrap titles in **asterisks**)
+- Use short paragraphs and - bullet lists
+- Bold key numbers with **like this** inside sentences only
+- Be specific to the report numbers (include BMI value and category under BMI Assessment)
+- Keep under 700 words
+- Skip a section only if there is truly no relevant data`,
       },
       {
         role: 'user',

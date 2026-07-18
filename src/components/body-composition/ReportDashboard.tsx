@@ -57,7 +57,7 @@ export function ReportDashboard({
         </button>
       </div>
 
-      <MetricCards report={current} />
+      <MetricCards report={current} analysis={current.aiAnalysis} />
 
       <section className="space-y-2">
         <h3 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground px-0.5">

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { CalendarRange, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { AnalysisSections } from './AnalysisSections'
 
 export function MonthlyReportCard() {
   const [report, setReport] = useState('')
@@ -45,7 +46,7 @@ export function MonthlyReportCard() {
       </div>
       {error && <p className="text-xs text-destructive">{error}</p>}
       {report ? (
-        <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{report}</div>
+        <AnalysisSections text={report} />
       ) : (
         <p className="text-xs text-muted-foreground">
           Summarize the last 30 days of body composition progress.

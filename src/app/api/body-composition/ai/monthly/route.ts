@@ -30,9 +30,18 @@ export async function POST() {
     const report = await completeGroqTextChat([
       {
         role: 'system',
-        content: `You write GymTrack monthly body composition summaries with markdown sections:
-Monthly Summary, Overall Progress, Muscle Gain, Fat Loss, Strength Recommendation, Nutrition Recommendation, Workout Recommendation, Recovery Recommendation, Motivational Insight.
-Be specific to the data. Under 650 words.`,
+        content: `You write GymTrack monthly body composition summaries using ## markdown headings:
+## Monthly Summary
+## Overall Progress
+## Muscle Gain
+## Fat Loss
+## Strength Recommendation
+## Nutrition Recommendation
+## Workout Recommendation
+## Recovery Recommendation
+## Motivational Insight
+
+Rules: use ## headings only (never wrap titles in **asterisks**), short paragraphs and - bullets, bold key numbers inside sentences with **like this**. Be specific to the data. Under 650 words.`,
       },
       {
         role: 'user',

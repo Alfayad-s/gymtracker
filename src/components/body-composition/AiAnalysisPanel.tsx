@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { AnalysisSections } from './AnalysisSections'
 
 export function AiAnalysisPanel({
   reportId,
@@ -16,6 +17,11 @@ export function AiAnalysisPanel({
   const [analysis, setAnalysis] = useState(initialAnalysis ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setAnalysis(initialAnalysis ?? '')
+    setError(null)
+  }, [reportId, initialAnalysis])
 
   const generate = async () => {
     setLoading(true)
@@ -53,14 +59,12 @@ export function AiAnalysisPanel({
           disabled={loading}
           className="h-9 px-3 rounded-[12px] bg-primary text-primary-foreground text-xs font-bold border-0"
         >
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Generate'}
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : analysis ? 'Refresh' : 'Generate'}
         </Button>
       </div>
       {error && <p className="text-xs text-destructive">{error}</p>}
       {analysis ? (
-        <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-          {analysis}
-        </div>
+        <AnalysisSections text={analysis} />
       ) : (
         <p className="text-xs text-muted-foreground">
           Generate a personalized health, training, and nutrition breakdown from this report.
