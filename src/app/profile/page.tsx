@@ -15,6 +15,7 @@ import {
   Scale,
   Ruler,
   Camera,
+  ScanLine,
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -88,6 +89,7 @@ export default function ProfilePage() {
     null
 
   const profileOptions = [
+    { name: 'Body Composition', href: '/body-composition', icon: ScanLine, color: 'text-primary', bg: 'bg-primary/10' },
     { name: 'Workout Plans', href: '/plans', icon: ClipboardList, color: 'text-primary', bg: 'bg-primary/10' },
     { name: 'Exercise Library', href: '/exercises', icon: Library, color: 'text-primary', bg: 'bg-primary/10' },
     { name: 'Personal Records', href: '/personal-records', icon: Award, color: 'text-primary', bg: 'bg-primary/10' },

@@ -153,3 +153,37 @@ export const userAppSync = pgTable('user_app_sync', {
   payload: text('payload').notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()).notNull(),
 })
+
+// 13. Body composition (InBody / BIA) reports
+export const bodyCompositionReports = pgTable('body_composition_reports', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => profiles.id, { onDelete: 'cascade' }).notNull(),
+  reportDate: timestamp('report_date').defaultNow().notNull(),
+  height: numeric('height', { precision: 6, scale: 2 }),
+  weight: numeric('weight', { precision: 6, scale: 2 }),
+  bodyScore: numeric('body_score', { precision: 6, scale: 2 }),
+  bmi: numeric('bmi', { precision: 6, scale: 2 }),
+  bodyFatPercent: numeric('body_fat_percent', { precision: 6, scale: 2 }),
+  bodyFatMass: numeric('body_fat_mass', { precision: 6, scale: 2 }),
+  skeletalMuscleMass: numeric('skeletal_muscle_mass', { precision: 6, scale: 2 }),
+  leanBodyMass: numeric('lean_body_mass', { precision: 6, scale: 2 }),
+  protein: numeric('protein', { precision: 6, scale: 2 }),
+  minerals: numeric('minerals', { precision: 6, scale: 2 }),
+  totalBodyWater: numeric('total_body_water', { precision: 6, scale: 2 }),
+  visceralFat: numeric('visceral_fat', { precision: 6, scale: 2 }),
+  waistHipRatio: numeric('waist_hip_ratio', { precision: 6, scale: 3 }),
+  bmr: numeric('bmr', { precision: 8, scale: 2 }),
+  recommendedCalories: numeric('recommended_calories', { precision: 8, scale: 2 }),
+  targetWeight: numeric('target_weight', { precision: 6, scale: 2 }),
+  weightControl: numeric('weight_control', { precision: 6, scale: 2 }),
+  fatControl: numeric('fat_control', { precision: 6, scale: 2 }),
+  muscleControl: numeric('muscle_control', { precision: 6, scale: 2 }),
+  segmentalLean: text('segmental_lean'), // JSON
+  segmentalFat: text('segmental_fat'), // JSON
+  pdfUrl: text('pdf_url'),
+  imageUrl: text('image_url'),
+  rawText: text('raw_text'),
+  aiAnalysis: text('ai_analysis'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()).notNull(),
+})

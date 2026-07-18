@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   LineChart,
   Line,
@@ -14,7 +15,18 @@ import {
   ReferenceLine,
 } from 'recharts'
 import { format, parseISO } from 'date-fns'
-import { TrendingUp, TrendingDown, Activity, Dumbbell, Scale, Plus, Target, Minus } from 'lucide-react'
+import {
+  TrendingUp,
+  TrendingDown,
+  Activity,
+  Dumbbell,
+  Scale,
+  Plus,
+  Target,
+  Minus,
+  ScanLine,
+  ChevronRight,
+} from 'lucide-react'
 import { useHistoryStore } from '@/stores/historyStore'
 import { useProgressStore, computeBodyWeightStats } from '@/stores/progressStore'
 import {
@@ -34,6 +46,7 @@ const chartTooltipStyle = {
 }
 
 export default function ProgressPage() {
+  const router = useRouter()
   const workouts = useHistoryStore((s) => s.workouts)
   const bodyWeightLog = useProgressStore((s) => s.bodyWeightLog)
   const addBodyWeight = useProgressStore((s) => s.addBodyWeight)
@@ -112,6 +125,25 @@ export default function ProgressPage() {
           Volume, weight lifted, frequency, and body weight over time.
         </p>
       </div>
+
+      <button
+        type="button"
+        onClick={() => router.push('/body-composition')}
+        className="w-full rounded-[20px] border border-primary/25 bg-gradient-to-br from-primary/10 via-transparent to-transparent p-4 flex items-center justify-between gap-3 cursor-pointer active:scale-[0.99]"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
+            <ScanLine className="w-4 h-4 text-primary" />
+          </div>
+          <div className="text-left min-w-0">
+            <p className="text-sm font-bold text-foreground">Body Composition</p>
+            <p className="text-[11px] text-muted-foreground">
+              Upload InBody reports · AI metrics · charts
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-primary shrink-0" />
+      </button>
 
       {/* Highlights */}
       <div className="grid grid-cols-2 gap-3">

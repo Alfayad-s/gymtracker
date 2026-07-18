@@ -1,0 +1,56 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/utils/supabase/server'
+import { completeGroqTextChat } from '@/lib/groq'
+import { getReportForUser, listReportsForUser } from '@/lib/body-composition/db'
+
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  let body: { question?: string; reportId?: string }
+  try {
+    body = (await request.json()) as typeof body
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const question = typeof body.question === 'string' ? body.question.trim() : ''
+  if (!question) {
+    return NextResponse.json({ error: 'Question is required' }, { status: 400 })
+  }
+
+  const reports = await listReportsForUser(user.id)
+  const report =
+    (body.reportId ? await getReportForUser(user.id, body.reportId) : null) ??
+    reports[0] ??
+    null
+  if (!report) {
+    return NextResponse.json({ error: 'Upload a report first' }, { status: 404 })
+  }
+
+  try {
+    const answer = await completeGroqTextChat([
+      {
+        role: 'system',
+        content: `You are GymTrack AI Coach for body composition. Answer ONLY using the provided report data. If the report lacks data, say so. Be concise, actionable, and personalized. No medical diagnosis disclaimers longer than one short sentence.`,
+      },
+      {
+        role: 'user',
+        content: `Report JSON:\n${JSON.stringify(report)}\n\nQuestion: ${question.slice(0, 500)}`,
+      },
+    ])
+    return NextResponse.json({ answer })
+  } catch (error) {
+    console.error('Body composition coach failed:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Coach unavailable' },
+      { status: 503 }
+    )
+  }
+}

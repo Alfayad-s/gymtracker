@@ -1,0 +1,75 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/utils/supabase/server'
+import { BodyCompositionExtractSchema } from '@/lib/body-composition/types'
+import { insertReport, listReportsForUser } from '@/lib/body-composition/db'
+import { db } from '@/db'
+import { notifications } from '@/db/schema'
+
+export const runtime = 'nodejs'
+
+export async function GET() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  try {
+    const reports = await listReportsForUser(user.id)
+    return NextResponse.json({ reports })
+  } catch (error) {
+    console.error('List body composition reports failed:', error)
+    return NextResponse.json({ error: 'Failed to load reports' }, { status: 500 })
+  }
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  let body: {
+    extract?: unknown
+    pdfUrl?: string | null
+    imageUrl?: string | null
+    rawText?: string | null
+  }
+  try {
+    body = (await request.json()) as typeof body
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const parsed = BodyCompositionExtractSchema.safeParse(body.extract)
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid report payload' }, { status: 400 })
+  }
+
+  try {
+    const report = await insertReport({
+      userId: user.id,
+      extract: parsed.data,
+      pdfUrl: body.pdfUrl ?? null,
+      imageUrl: body.imageUrl ?? null,
+      rawText: body.rawText ?? null,
+    })
+
+    try {
+      await db.insert(notifications).values({
+        userId: user.id,
+        title: 'New report analyzed',
+        body: 'Your body composition report is ready to review.',
+        type: 'body_composition',
+      })
+    } catch {
+      // non-fatal
+    }
+
+    return NextResponse.json({ report })
+  } catch (error) {
+    console.error('Save body composition report failed:', error)
+    return NextResponse.json({ error: 'Failed to save report' }, { status: 500 })
+  }
+}

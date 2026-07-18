@@ -112,3 +112,35 @@ export async function uploadMealPhoto(params: {
 
   return { url: result.secure_url, publicId: result.public_id }
 }
+
+export async function uploadBodyCompositionFile(params: {
+  userId: string
+  fileKey: string
+  buffer: Buffer
+  kind: 'image' | 'pdf'
+}): Promise<{ url: string; publicId: string }> {
+  const folder = `gymtrack/body-composition/${params.userId}`
+  const publicId = params.fileKey
+
+  // PDFs as image so Cloudinary can render page 1 for vision OCR.
+  const result = await uploadBuffer(params.buffer, {
+    folder,
+    public_id: publicId,
+    overwrite: true,
+    invalidate: true,
+    resource_type: 'image',
+    ...(params.kind === 'image'
+      ? {
+          transformation: [{ width: 2000, height: 2000, crop: 'limit', quality: 'auto' }],
+        }
+      : { pages: true }),
+  })
+
+  return { url: result.secure_url, publicId: result.public_id }
+}
+
+/** Preview URL suitable for Groq vision (PNG page 1 for PDFs). */
+export function bodyCompositionPreviewUrl(secureUrl: string, kind: 'image' | 'pdf') {
+  if (kind === 'image') return secureUrl
+  return secureUrl.replace('/upload/', '/upload/f_png,pg_1,w_1600/')
+}

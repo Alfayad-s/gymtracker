@@ -164,3 +164,23 @@ export function listenForRestSoundMessages(): () => void {
   navigator.serviceWorker.addEventListener('message', onMessage)
   return () => navigator.serviceWorker.removeEventListener('message', onMessage)
 }
+
+/** Generic page notification for body composition events. */
+export function notifyBodyComposition(title: string, body: string): void {
+  if (!notificationSupported()) return
+  if (Notification.permission !== 'granted') return
+  try {
+    const n = new Notification(title, {
+      body,
+      tag: 'gymtrack-body-composition',
+      icon: '/icon-192x192.png',
+    })
+    n.onclick = () => {
+      window.focus()
+      window.location.href = '/body-composition'
+      n.close()
+    }
+  } catch {
+    /* ignore */
+  }
+}
