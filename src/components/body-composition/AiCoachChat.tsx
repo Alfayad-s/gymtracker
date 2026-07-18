@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Loader2, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { FormattedAiMessage } from './AnalysisSections'
 
 const SUGGESTIONS = [
   'Why is my body fat high?',
@@ -67,24 +68,26 @@ export function AiCoachChat({ reportId }: { reportId: string }) {
           </button>
         ))}
       </div>
-      <div className="max-h-64 overflow-y-auto space-y-2">
+      <div className="max-h-80 overflow-y-auto space-y-2.5">
         {messages.length === 0 && (
           <p className="text-xs text-muted-foreground">
             Ask anything about your latest report.
           </p>
         )}
-        {messages.map((m, i) => (
-          <div
-            key={`${m.role}-${i}`}
-            className={`rounded-[14px] px-3 py-2 text-xs leading-relaxed ${
-              m.role === 'user'
-                ? 'bg-primary/15 text-foreground ml-6'
-                : 'bg-muted text-foreground mr-6'
-            }`}
-          >
-            {m.content}
-          </div>
-        ))}
+        {messages.map((m, i) =>
+          m.role === 'user' ? (
+            <div
+              key={`${m.role}-${i}`}
+              className="rounded-[14px] px-3 py-2 text-xs leading-relaxed bg-primary/15 text-foreground ml-6"
+            >
+              {m.content}
+            </div>
+          ) : (
+            <div key={`${m.role}-${i}`} className="mr-2">
+              <FormattedAiMessage text={m.content} compact />
+            </div>
+          )
+        )}
         {loading && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="w-3.5 h-3.5 animate-spin" /> Thinking…

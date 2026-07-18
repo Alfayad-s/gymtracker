@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Bot, Volume2, VolumeX } from 'lucide-react'
 import { AgentProposalCard } from '@/components/ai/AgentProposalCard'
+import { FormattedAiMessage } from '@/components/body-composition/AnalysisSections'
 import { PromptInputBox } from '@/components/ui/ai-prompt-box'
 import type { AgentProposal } from '@/lib/ai/agent-types'
 import { buildAgentContext } from '@/lib/ai/build-agent-context'
 import { executeAgentActions } from '@/lib/ai/execute-agent-actions'
+import { stripMarkdown } from '@/lib/body-composition/parse-analysis'
 import { useAuthStore } from '@/stores/authStore'
 import { useProfileStore } from '@/stores/profileStore'
 
@@ -145,7 +147,7 @@ export default function AiChatPage() {
       }
 
       stopSpeaking()
-      const utterance = new SpeechSynthesisUtterance(message.content)
+      const utterance = new SpeechSynthesisUtterance(stripMarkdown(message.content))
       utterance.rate = 1
       utterance.pitch = 1
       utterance.onend = () => setSpeakingId(null)
@@ -345,23 +347,21 @@ export default function AiChatPage() {
               )}
 
               <div className={`max-w-[85%] ${isUser ? '' : 'space-y-2'}`}>
-                <div
-                  className={`px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                    isUser
-                      ? 'bg-primary text-primary-foreground rounded-[22px]'
-                      : 'bg-card border border-border text-foreground rounded-[22px]'
-                  }`}
-                >
-                  {isUser ? (
-                    message.content
-                  ) : (
+                {isUser ? (
+                  <div className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-primary text-primary-foreground rounded-[22px]">
+                    {message.content}
+                  </div>
+                ) : message.animate ? (
+                  <div className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-card border border-border text-foreground rounded-[22px]">
                     <TypewriterText
-                      text={message.content}
-                      enabled={Boolean(message.animate)}
+                      text={stripMarkdown(message.content)}
+                      enabled
                       onComplete={() => markTyped(message.id)}
                     />
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <FormattedAiMessage text={message.content} />
+                )}
 
                 {message.proposal && !message.animate && (
                   <AgentProposalCard

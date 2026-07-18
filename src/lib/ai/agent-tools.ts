@@ -53,7 +53,13 @@ Examples:
 {"summary":"Update Cable Fly","actions":[{"action":"update_custom_exercise","params":{"name":"Cable Fly","instructions":["…"]}}]}
 {"summary":"Delete Cable Fly","actions":[{"action":"delete_custom_exercise","params":{"name":"Cable Fly"}}]}
 
-Rules: never claim data changed until the user confirms; use IDs from context; "that/this/it" exercise = customExercises[0]; catalog is read-only; keep replies short; no medical diagnosis.`
+Rules: never claim data changed until the user confirms; use IDs from context; "that/this/it" exercise = customExercises[0]; catalog is read-only; keep replies short; no medical diagnosis.
+
+Formatting for READ answers (not tool calls):
+- Use ## Section Title headings for multi-part answers (e.g. ## Workout, ## Tips, ## Nutrition)
+- Use - bullet lists for steps and options
+- Bold key numbers/names with **like this** inside sentences only — never wrap section titles in **asterisks**
+- Short one-liner answers can stay as plain prose`
 
 export const JSON_FALLBACK_PROMPT = `Tool call failed. For create/update/delete reply with ONLY JSON:
 {"summary":"...","actions":[{"action":"create_custom_exercise","params":{"name":"Cable Fly","instructions":["step 1"]}}]}
