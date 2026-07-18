@@ -265,6 +265,11 @@ export default function WorkoutPage() {
             result.completedAt
           )
         }
+
+        void import('@/server/actions/challenge.actions').then(({ syncAutoCompletionsAction }) => {
+          const todayDate = result.completedAt.slice(0, 10)
+          void syncAutoCompletionsAction({ todayDate, event: 'workout' })
+        })
       }
       setSummary(result)
     }

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, numeric } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, integer, boolean, numeric, uniqueIndex, index } from 'drizzle-orm/pg-core'
 
 // 1. Profiles (user profile information, maps to Supabase auth user)
 export const profiles = pgTable('profiles', {
@@ -187,3 +187,82 @@ export const bodyCompositionReports = pgTable('body_composition_reports', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()).notNull(),
 })
+
+// 14. Daily / weekly / monthly challenges
+export const dailyChallenges = pgTable(
+  'daily_challenges',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => profiles.id, { onDelete: 'cascade' })
+      .notNull(),
+    date: text('date').notNull(), // YYYY-MM-DD
+    period: text('period').default('daily').notNull(), // daily | weekly | monthly
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    category: text('category').notNull(),
+    difficulty: text('difficulty').notNull(),
+    targetValue: numeric('target_value', { precision: 12, scale: 2 }).notNull(),
+    currentValue: numeric('current_value', { precision: 12, scale: 2 }).default('0').notNull(),
+    unit: text('unit').notNull(),
+    status: text('status').default('pending').notNull(),
+    xpReward: integer('xp_reward').notNull(),
+    coinReward: integer('coin_reward').notNull(),
+    badgeReward: text('badge_reward'),
+    icon: text('icon'),
+    color: text('color'),
+    autoComplete: boolean('auto_complete').default(false).notNull(),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    index('daily_challenges_user_date_idx').on(t.userId, t.date),
+    index('daily_challenges_user_status_idx').on(t.userId, t.status),
+  ]
+)
+
+// 15. Challenge completion history
+export const challengeHistory = pgTable(
+  'challenge_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => profiles.id, { onDelete: 'cascade' })
+      .notNull(),
+    challengeId: uuid('challenge_id')
+      .references(() => dailyChallenges.id, { onDelete: 'cascade' })
+      .notNull(),
+    completedAt: timestamp('completed_at').defaultNow().notNull(),
+    xpEarned: integer('xp_earned').notNull(),
+    coinsEarned: integer('coins_earned').notNull(),
+  },
+  (t) => [index('challenge_history_user_idx').on(t.userId, t.completedAt)]
+)
+
+// 16. User XP / coins / streaks / badges
+export const userRewards = pgTable(
+  'user_rewards',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => profiles.id, { onDelete: 'cascade' })
+      .notNull()
+      .unique(),
+    level: integer('level').default(1).notNull(),
+    xp: integer('xp').default(0).notNull(),
+    coins: integer('coins').default(0).notNull(),
+    currentStreak: integer('current_streak').default(0).notNull(),
+    longestStreak: integer('longest_streak').default(0).notNull(),
+    lastCompletedDate: text('last_completed_date'),
+    badges: text('badges').default('[]').notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [uniqueIndex('user_rewards_user_uidx').on(t.userId)]
+)

@@ -184,3 +184,23 @@ export function notifyBodyComposition(title: string, body: string): void {
     /* ignore */
   }
 }
+
+/** Challenge / streak / level notifications. */
+export function notifyChallenge(title: string, body: string, href = '/challenges'): void {
+  if (!notificationSupported()) return
+  if (Notification.permission !== 'granted') return
+  try {
+    const n = new Notification(title, {
+      body,
+      tag: 'gymtrack-challenge',
+      icon: '/icon-192x192.png',
+    })
+    n.onclick = () => {
+      window.focus()
+      window.location.href = href
+      n.close()
+    }
+  } catch {
+    /* ignore */
+  }
+}

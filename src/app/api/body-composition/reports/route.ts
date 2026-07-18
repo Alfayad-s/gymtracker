@@ -67,6 +67,16 @@ export async function POST(request: Request) {
       // non-fatal
     }
 
+    try {
+      const { formatDateKey, autoCompleteMatching } = await import('@/lib/challenges/db')
+      await autoCompleteMatching(user.id, formatDateKey(new Date()), (c) => {
+        const hay = `${c.title} ${c.description}`.toLowerCase()
+        return /bia|body composition|inbody/i.test(hay)
+      })
+    } catch {
+      // non-fatal
+    }
+
     return NextResponse.json({ report })
   } catch (error) {
     console.error('Save body composition report failed:', error)

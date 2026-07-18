@@ -70,6 +70,7 @@ import {
 } from '@/components/muscle-map'
 import type { MuscleHighlights } from '@/components/muscle-map'
 import { InstallPrompt } from '@/components/pwa/InstallPrompt'
+import { ChallengesWidget } from '@/components/challenges/challenges-widget'
 
 const FOCUS_FROM_MUSCLE: Record<string, keyof typeof WORKOUT_MUSCLES> = {
   chest: 'chest',
@@ -1182,6 +1183,8 @@ export default function DashboardPage() {
         </div>
         <ChevronRight className="w-4 h-4 text-primary" />
       </button>
+
+      <ChallengesWidget />
 
       {/* Today's Meals */}
       <button

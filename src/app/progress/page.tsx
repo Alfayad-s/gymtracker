@@ -100,6 +100,10 @@ export default function ProgressPage() {
     addBodyWeight(w)
     setWeightInput('')
     setShowWeightForm(false)
+    void import('@/server/actions/challenge.actions').then(({ syncAutoCompletionsAction }) => {
+      const todayDate = new Date().toISOString().slice(0, 10)
+      void syncAutoCompletionsAction({ todayDate, event: 'weight' })
+    })
   }
 
   const handleSaveGoal = () => {
