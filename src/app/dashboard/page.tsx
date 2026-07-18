@@ -16,6 +16,7 @@ import {
   Award,
   Timer,
   BarChart3,
+  Droplets,
   PartyPopper,
   Apple,
   UtensilsCrossed,
@@ -42,6 +43,7 @@ import { useProfileStore } from '@/stores/profileStore'
 import {
   summarizeMeals,
   todayKey,
+  formatWaterAmount,
   useMealStore,
 } from '@/stores/mealStore'
 import {
@@ -468,8 +470,10 @@ export default function DashboardPage() {
   const customExercises = useExerciseStore((s) => s.exercises)
   const workouts = useHistoryStore((s) => s.workouts)
   const meals = useMealStore((s) => s.meals)
+  const waterLogs = useMealStore((s) => s.waterLogs)
   const dailyCalorieGoal = useMealStore((s) => s.dailyCalorieGoal)
   const dailyProteinGoal = useMealStore((s) => s.dailyProteinGoal)
+  const dailyWaterGoalMl = useMealStore((s) => s.dailyWaterGoalMl)
   const profileAvatarUrl = useProfileStore((s) => s.avatarUrl)
   const authLoading = useAuthStore((s) => s.loading)
   const [bodyView, setBodyView] = useState<'front' | 'back'>('front')
@@ -680,11 +684,14 @@ export default function DashboardPage() {
 
   const mealStats = useMemo(() => {
     if (!hydrated) {
-      return { calories: 0, proteinG: 0, carbsG: 0, fatG: 0, count: 0 }
+      return { calories: 0, proteinG: 0, carbsG: 0, fatG: 0, count: 0, waterMl: 0 }
     }
     const key = todayKey()
-    return summarizeMeals(meals.filter((m) => m.date === key))
-  }, [hydrated, meals])
+    return {
+      ...summarizeMeals(meals.filter((m) => m.date === key)),
+      waterMl: useMealStore.getState().getWaterTotalMl(key),
+    }
+  }, [hydrated, meals, waterLogs])
 
   const caloriePct = Math.min(
     100,
@@ -693,6 +700,10 @@ export default function DashboardPage() {
   const proteinPct = Math.min(
     100,
     Math.round((mealStats.proteinG / Math.max(1, dailyProteinGoal)) * 100)
+  )
+  const waterPct = Math.min(
+    100,
+    Math.round((mealStats.waterMl / Math.max(1, dailyWaterGoalMl)) * 100)
   )
 
   const sessionExerciseCount = activeSession?.exercises.length ?? 0
@@ -1280,6 +1291,30 @@ export default function DashboardPage() {
             </div>
           </>
         )}
+
+        <div className="rounded-[14px] bg-sky-500/10 border border-sky-500/20 px-3 py-2.5 flex items-center gap-3">
+          <Droplets className="w-4 h-4 text-sky-500 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">
+                Water
+              </p>
+              <p className="text-xs font-bold text-foreground tabular-nums">
+                {formatWaterAmount(mealStats.waterMl)}
+                <span className="text-muted-foreground font-semibold">
+                  {' '}
+                  / {formatWaterAmount(dailyWaterGoalMl)}
+                </span>
+              </p>
+            </div>
+            <div className="mt-1.5 h-1.5 rounded-full bg-muted/80 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-sky-500 transition-all"
+                style={{ width: `${waterPct}%` }}
+              />
+            </div>
+          </div>
+        </div>
       </button>
 
       {/* Quick stats */}

@@ -19,6 +19,7 @@ export function useChallengeContext(): ChallengeGeneratorInput {
   const lastTrained = useRecoveryStore((s) => s.lastTrained)
   const proteinGoal = useMealStore((s) => s.dailyProteinGoal)
   const calorieGoal = useMealStore((s) => s.dailyCalorieGoal)
+  const waterGoal = useMealStore((s) => s.dailyWaterGoalMl)
   const goalWeight = useProgressStore((s) => s.goalWeight)
   const bodyWeightLog = useProgressStore((s) => s.bodyWeightLog)
 
@@ -76,7 +77,7 @@ export function useChallengeContext(): ChallengeGeneratorInput {
       bodyFat: latest?.bodyFatPercent ?? null,
       muscleMass: latest?.skeletalMuscleMass ?? null,
       proteinTarget: proteinGoal || 150,
-      waterTarget: 3000,
+      waterTarget: waterGoal || 3000,
       calorieTarget: calorieGoal || undefined,
       todayDate: today,
       yesterdayTitles: [],
@@ -89,6 +90,7 @@ export function useChallengeContext(): ChallengeGeneratorInput {
     lastTrained,
     proteinGoal,
     calorieGoal,
+    waterGoal,
     goalWeight,
     bodyWeightLog,
   ])

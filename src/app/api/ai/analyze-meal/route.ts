@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/utils/supabase/server'
-import { completeGroqVisionChat } from '@/lib/groq'
+import { completeGroqTextChat, completeGroqVisionChat } from '@/lib/groq'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -18,8 +18,17 @@ const MealSuggestionSchema = z.object({
 
 export type MealAiSuggestion = z.infer<typeof MealSuggestionSchema>
 
+const JSON_SHAPE = `{
+  "name": string (short meal label, e.g. "Chicken rice bowl"),
+  "calories": number,
+  "proteinG": number,
+  "carbsG": number,
+  "fatG": number,
+  "notes": string (optional short assumption, e.g. "Assumes grilled, 1 serving"),
+  "confidence": "low" | "medium" | "high"
+}`
+
 function parseSuggestion(raw: string): MealAiSuggestion | null {
-  // Strip optional Qwen thinking / reasoning wrappers if present.
   const cleaned = raw
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
@@ -69,58 +78,89 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { imageUrl?: string; hint?: string }
+  let body: { imageUrl?: string; hint?: string; description?: string }
   try {
-    body = (await request.json()) as { imageUrl?: string; hint?: string }
+    body = (await request.json()) as {
+      imageUrl?: string
+      hint?: string
+      description?: string
+    }
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
   const imageUrl = typeof body.imageUrl === 'string' ? body.imageUrl.trim() : ''
-  if (!imageUrl) {
-    return NextResponse.json({ error: 'Meal photo URL is required' }, { status: 400 })
+  const description =
+    (typeof body.description === 'string' ? body.description.trim() : '') ||
+    (typeof body.hint === 'string' ? body.hint.trim() : '')
+  const hint = typeof body.hint === 'string' ? body.hint.trim().slice(0, 400) : ''
+
+  if (!imageUrl && !description) {
+    return NextResponse.json(
+      { error: 'Describe what you ate or upload a meal photo.' },
+      { status: 400 }
+    )
   }
 
-  if (!/^https?:\/\//i.test(imageUrl) && !imageUrl.startsWith('data:image/')) {
+  if (imageUrl && !/^https?:\/\//i.test(imageUrl) && !imageUrl.startsWith('data:image/')) {
     return NextResponse.json({ error: 'Invalid image URL' }, { status: 400 })
   }
 
-  const hint = typeof body.hint === 'string' ? body.hint.trim().slice(0, 200) : ''
+  try {
+    let raw: string
 
-  const system = `You are a nutrition assistant for GymTrack.
+    if (imageUrl) {
+      const system = `You are a nutrition assistant for GymTrack.
 Look at the meal photo and estimate macros for a single serving shown.
 Return ONLY valid JSON (no markdown, no prose) with this shape:
-{
-  "name": string (short meal label, e.g. "Grilled chicken rice bowl"),
-  "calories": number,
-  "proteinG": number,
-  "carbsG": number,
-  "fatG": number,
-  "notes": string (optional short assumption, e.g. "Assumes 1 plate"),
-  "confidence": "low" | "medium" | "high"
-}
+${JSON_SHAPE}
 Be realistic. Prefer whole numbers. If the food is unclear, still guess best-effort with confidence "low".`
 
-  const userText = hint
-    ? `Identify this meal and estimate macros. Extra context from user: ${hint}`
-    : 'Identify this meal and estimate calories plus protein, carbs, and fat for the portion shown.'
+      const userText = hint
+        ? `Identify this meal and estimate macros. Extra context from user: ${hint}`
+        : 'Identify this meal and estimate calories plus protein, carbs, and fat for the portion shown.'
 
-  try {
-    const raw = await completeGroqVisionChat([
-      { role: 'system', content: system },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: userText },
-          { type: 'image_url', image_url: { url: imageUrl } },
-        ],
-      },
-    ])
+      raw = await completeGroqVisionChat([
+        { role: 'system', content: system },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: userText },
+            { type: 'image_url', image_url: { url: imageUrl } },
+          ],
+        },
+      ])
+    } else {
+      const system = `You are a nutrition assistant for GymTrack.
+The user describes foods they ate in plain text (amounts, items, brands if any).
+Estimate total macros for everything listed as one meal/log entry.
+Sum all items together into a single totals object.
+Return ONLY valid JSON (no markdown, no prose) with this shape:
+${JSON_SHAPE}
+Rules:
+- Use realistic USDA-style estimates for common foods
+- Respect quantities (e.g. "2 eggs", "1 cup rice", "200g chicken")
+- If amount is vague, assume a normal single serving and note it in "notes"
+- Prefer whole numbers
+- "name" should be a short summary of the foods`
+
+      raw = await completeGroqTextChat([
+        { role: 'system', content: system },
+        {
+          role: 'user',
+          content: `Estimate macros for this meal description:\n${description.slice(0, 800)}`,
+        },
+      ])
+    }
 
     const suggestion = parseSuggestion(raw)
     if (!suggestion) {
       return NextResponse.json(
-        { error: 'AI returned an invalid meal estimate. Try another photo.' },
+        {
+          error: imageUrl
+            ? 'AI returned an invalid meal estimate. Try another photo.'
+            : 'AI could not read that description. Try clearer amounts (e.g. "2 eggs, 1 cup rice").',
+        },
         { status: 422 }
       )
     }
@@ -131,7 +171,7 @@ Be realistic. Prefer whole numbers. If the food is unclear, still guess best-eff
     const message =
       error instanceof Error ? error.message : 'AI is unavailable right now. Please try again.'
     const friendly = /does not exist|do not have access|model_not_found/i.test(message)
-      ? 'Vision model is unavailable. Try again later or fill macros manually.'
+      ? 'AI model is unavailable. Try again later or fill macros manually.'
       : message
     return NextResponse.json({ error: friendly }, { status: 503 })
   }

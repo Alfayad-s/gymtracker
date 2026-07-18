@@ -7,6 +7,7 @@ import {
   Camera,
   Coffee,
   Cookie,
+  Droplets,
   Loader2,
   Plus,
   Sparkles,
@@ -16,6 +17,8 @@ import {
 } from 'lucide-react'
 import {
   MEAL_TYPE_LABELS,
+  WATER_QUICK_AMOUNTS_ML,
+  formatWaterAmount,
   mealTypeFromTime,
   summarizeMeals,
   todayKey,
@@ -67,11 +70,15 @@ async function uploadMealPhoto(file: File): Promise<string> {
   return data.url
 }
 
-async function analyzeMealPhoto(imageUrl: string, hint?: string) {
+async function analyzeMeal(input: { imageUrl?: string; description?: string; hint?: string }) {
   const res = await fetch('/api/ai/analyze-meal', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageUrl, hint: hint?.trim() || undefined }),
+    body: JSON.stringify({
+      imageUrl: input.imageUrl || undefined,
+      description: input.description?.trim() || undefined,
+      hint: input.hint?.trim() || undefined,
+    }),
   })
   const data = (await res.json().catch(() => ({}))) as {
     suggestion?: {
@@ -86,17 +93,22 @@ async function analyzeMealPhoto(imageUrl: string, hint?: string) {
     error?: string
   }
   if (!res.ok || !data.suggestion) {
-    throw new Error(data.error || 'AI could not read this meal')
+    throw new Error(data.error || 'AI could not estimate this meal')
   }
   return data.suggestion
 }
 
 export default function MealsPage() {
   const meals = useMealStore((s) => s.meals)
+  const waterLogs = useMealStore((s) => s.waterLogs)
   const dailyCalorieGoal = useMealStore((s) => s.dailyCalorieGoal)
   const dailyProteinGoal = useMealStore((s) => s.dailyProteinGoal)
+  const dailyWaterGoalMl = useMealStore((s) => s.dailyWaterGoalMl)
   const addMeal = useMealStore((s) => s.addMeal)
   const deleteMeal = useMealStore((s) => s.deleteMeal)
+  const addWater = useMealStore((s) => s.addWater)
+  const removeWater = useMealStore((s) => s.removeWater)
+  const getWaterTotalMl = useMealStore((s) => s.getWaterTotalMl)
   const user = useAuthStore((s) => s.user)
 
   const photoRef = useRef<HTMLInputElement>(null)
@@ -113,6 +125,9 @@ export default function MealsPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [aiNote, setAiNote] = useState<string | null>(null)
+  const [customWater, setCustomWater] = useState('')
+  const [waterBusy, setWaterBusy] = useState(false)
+  const [waterNote, setWaterNote] = useState<string | null>(null)
 
   const date = todayKey()
 
@@ -131,9 +146,82 @@ export default function MealsPage() {
     [hydrated, meals, date]
   )
 
+  const todaysWater = useMemo(
+    () => (hydrated ? waterLogs.filter((w) => w.date === date) : []),
+    [hydrated, waterLogs, date]
+  )
+
+  const waterTotalMl = useMemo(
+    () => (hydrated ? getWaterTotalMl(date) : 0),
+    [hydrated, getWaterTotalMl, date, waterLogs]
+  )
+
   const totals = useMemo(() => summarizeMeals(todaysMeals), [todaysMeals])
   const caloriePct = Math.min(100, Math.round((totals.calories / dailyCalorieGoal) * 100))
   const proteinPct = Math.min(100, Math.round((totals.proteinG / dailyProteinGoal) * 100))
+  const waterPct = Math.min(
+    100,
+    Math.round((waterTotalMl / Math.max(1, dailyWaterGoalMl)) * 100)
+  )
+
+  const syncWaterToChallenges = async (totalMl: number) => {
+    if (!user) return
+    try {
+      const { syncMetricProgressAction } = await import(
+        '@/server/actions/challenge.actions'
+      )
+      const updated = await syncMetricProgressAction({
+        todayDate: date,
+        metric: 'water',
+        value: totalMl,
+      })
+      const completed = updated.filter((c) => c.status === 'completed')
+      if (completed.length) {
+        setWaterNote(
+          `Hydration challenge complete · +${completed[0].xpReward} XP`
+        )
+      } else if (updated.length) {
+        setWaterNote('Challenge progress updated')
+      }
+    } catch {
+      /* challenges optional if offline / unauthorized */
+    }
+  }
+
+  const syncProteinToChallenges = async (proteinG: number) => {
+    if (!user) return
+    try {
+      const { syncMetricProgressAction } = await import(
+        '@/server/actions/challenge.actions'
+      )
+      await syncMetricProgressAction({
+        todayDate: date,
+        metric: 'protein',
+        value: proteinG,
+      })
+    } catch {
+      /* optional */
+    }
+  }
+
+  const handleLogWater = async (amountMl: number) => {
+    if (amountMl <= 0 || waterBusy) return
+    setWaterBusy(true)
+    setWaterNote(null)
+    try {
+      addWater(amountMl, date)
+      const nextTotal = useMealStore.getState().getWaterTotalMl(date)
+      await syncWaterToChallenges(nextTotal)
+    } finally {
+      setWaterBusy(false)
+    }
+  }
+
+  const handleRemoveWater = async (id: string) => {
+    removeWater(id)
+    const nextTotal = useMealStore.getState().getWaterTotalMl(date)
+    await syncWaterToChallenges(nextTotal)
+  }
 
   const openForm = () => {
     setType(mealTypeFromTime())
@@ -169,6 +257,9 @@ export default function MealsPage() {
       imageUrl: imageUrl || undefined,
       notes: aiNote || undefined,
     })
+    const nextProtein =
+      summarizeMeals(useMealStore.getState().getMealsForDate(date)).proteinG
+    void syncProteinToChallenges(nextProtein)
     resetForm()
   }
 
@@ -188,7 +279,7 @@ export default function MealsPage() {
       setType(mealTypeFromTime())
 
       setAnalyzing(true)
-      const suggestion = await analyzeMealPhoto(url, name)
+      const suggestion = await analyzeMeal({ imageUrl: url, hint: name })
       setName(suggestion.name)
       setCalories(String(suggestion.calories))
       setProtein(String(suggestion.proteinG))
@@ -208,7 +299,7 @@ export default function MealsPage() {
     setPhotoError(null)
     setAnalyzing(true)
     try {
-      const suggestion = await analyzeMealPhoto(imageUrl, name)
+      const suggestion = await analyzeMeal({ imageUrl, hint: name })
       setName(suggestion.name)
       setCalories(String(suggestion.calories))
       setProtein(String(suggestion.proteinG))
@@ -218,6 +309,36 @@ export default function MealsPage() {
       setType(mealTypeFromTime())
     } catch (err) {
       setPhotoError(err instanceof Error ? err.message : 'AI analysis failed')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  const handleEstimateFromText = async () => {
+    const description = name.trim()
+    if (!description) {
+      setPhotoError('Type what you ate first (e.g. 2 eggs, toast, banana).')
+      return
+    }
+    if (!user) {
+      setPhotoError('Sign in to estimate macros with AI.')
+      return
+    }
+
+    setPhotoError(null)
+    setAiNote(null)
+    setAnalyzing(true)
+    try {
+      const suggestion = await analyzeMeal({ description })
+      setName(suggestion.name)
+      setCalories(String(suggestion.calories))
+      setProtein(String(suggestion.proteinG))
+      setCarbs(String(suggestion.carbsG))
+      setFat(String(suggestion.fatG))
+      if (suggestion.notes) setAiNote(suggestion.notes)
+      setType(mealTypeFromTime())
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'AI estimate failed')
     } finally {
       setAnalyzing(false)
     }
@@ -312,6 +433,111 @@ export default function MealsPage() {
                 <p className="text-[10px] text-muted-foreground">Meals</p>
               </div>
             </div>
+          </section>
+
+          <section className="rounded-[24px] border border-sky-500/25 bg-gradient-to-br from-sky-500/10 via-transparent to-transparent p-4 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sky-500">
+                <Droplets className="w-4 h-4" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  Water intake
+                </span>
+              </div>
+              <span className="text-[10px] font-semibold text-muted-foreground tabular-nums">
+                {waterPct}% of goal
+              </span>
+            </div>
+
+            <div>
+              <p className="text-2xl font-bold text-foreground tabular-nums">
+                {formatWaterAmount(waterTotalMl)}
+                <span className="text-sm font-semibold text-muted-foreground">
+                  {' '}
+                  / {formatWaterAmount(dailyWaterGoalMl)}
+                </span>
+              </p>
+              <div className="mt-2 h-2.5 rounded-full bg-muted/80 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-sky-500 transition-all"
+                  style={{ width: `${waterPct}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {WATER_QUICK_AMOUNTS_ML.map((ml) => (
+                <button
+                  key={ml}
+                  type="button"
+                  disabled={waterBusy}
+                  onClick={() => void handleLogWater(ml)}
+                  className="h-10 px-3.5 rounded-full bg-sky-500/15 border border-sky-500/25 text-xs font-bold text-sky-600 dark:text-sky-400 cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  +{formatWaterAmount(ml)}
+                </button>
+              ))}
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const ml = Number(customWater)
+                if (!ml) return
+                void handleLogWater(ml).then(() => setCustomWater(''))
+              }}
+              className="flex gap-2"
+            >
+              <input
+                value={customWater}
+                onChange={(e) => setCustomWater(e.target.value.replace(/[^\d]/g, ''))}
+                inputMode="numeric"
+                placeholder="Custom ml"
+                className="flex-1 h-11 bg-background/60 border border-border rounded-[14px] px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-sky-500"
+              />
+              <Button
+                type="submit"
+                disabled={waterBusy || !customWater}
+                className="h-11 px-4 rounded-[14px] bg-sky-500 text-white font-bold border-0"
+              >
+                {waterBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add'}
+              </Button>
+            </form>
+
+            {waterNote && (
+              <p className="text-[11px] text-sky-600 dark:text-sky-400 font-medium">
+                {waterNote}
+              </p>
+            )}
+
+            {todaysWater.length > 0 && (
+              <div className="space-y-1.5 pt-1 border-t border-border/50">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Today&apos;s logs
+                </p>
+                {todaysWater.slice(0, 8).map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between gap-2 rounded-[12px] bg-background/50 border border-border/40 px-3 py-2"
+                  >
+                    <p className="text-xs text-foreground">
+                      <span className="font-bold">{formatWaterAmount(entry.amountMl)}</span>
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · {format(new Date(entry.createdAt), 'h:mm a')}
+                      </span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleRemoveWater(entry.id)}
+                      className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10 cursor-pointer"
+                      aria-label="Remove water log"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           {showForm && (
@@ -431,13 +657,37 @@ export default function MealsPage() {
                 Suggested from current time · change if needed
               </p>
 
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Meal name (e.g. Chicken rice bowl)"
-                className={inputClass}
-                required
-              />
+              <div className="space-y-2">
+                <textarea
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder='What did you eat? e.g. "2 eggs, 2 toast, peanut butter, banana"'
+                  rows={3}
+                  className="w-full min-h-[88px] bg-muted border border-border rounded-[14px] px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-y"
+                  required
+                />
+                <button
+                  type="button"
+                  disabled={busy || !name.trim()}
+                  onClick={() => void handleEstimateFromText()}
+                  className="w-full h-11 rounded-[14px] bg-primary/15 border border-primary/25 text-primary text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] disabled:opacity-50"
+                >
+                  {analyzing && !uploading && !imageUrl ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Estimating macros…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Estimate calories with AI
+                    </>
+                  )}
+                </button>
+                <p className="text-[10px] text-muted-foreground px-0.5">
+                  Describe foods and amounts — AI fills calories, protein, carbs, and fat.
+                </p>
+              </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <input

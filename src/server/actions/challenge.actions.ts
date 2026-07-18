@@ -264,6 +264,44 @@ export async function syncAutoCompletionsAction(payload: {
   return results
 }
 
+/** Sync water / protein totals into today's pending challenges (manual progress). */
+export async function syncMetricProgressAction(payload: {
+  todayDate: string
+  metric: 'water' | 'protein'
+  value: number
+}): Promise<DailyChallenge[]> {
+  const userId = await requireUserId()
+  const { todayDate, metric, value } = payload
+  const list = await getChallengesForDate(userId, todayDate, 'daily')
+  const updated: DailyChallenge[] = []
+
+  for (const c of list) {
+    if (c.status !== 'pending') continue
+    const hay = `${c.title} ${c.description} ${c.category} ${c.unit}`.toLowerCase()
+    const isWater =
+      metric === 'water' &&
+      (c.category === 'Hydration' ||
+        c.unit === 'ml' ||
+        /water|hydrat|drink/i.test(hay))
+    const isProtein =
+      metric === 'protein' &&
+      (c.unit === 'g' || /protein/i.test(hay)) &&
+      (c.category === 'Nutrition' || /protein/i.test(hay))
+
+    if (!isWater && !isProtein) continue
+
+    const result = await updateChallengeProgress(userId, c.id, value)
+    if (result) updated.push(result)
+  }
+
+  if (updated.length) {
+    revalidatePath('/challenges')
+    revalidatePath('/dashboard')
+    revalidatePath('/meals')
+  }
+  return updated
+}
+
 export async function todayKeyAction(): Promise<string> {
   return formatDateKey(new Date())
 }
