@@ -26,6 +26,8 @@ export type PlanDay = {
   dayOfWeek: number | null // 1–7 Mon–Sun
   order: number
   exercises: PlanExercise[]
+  /** Explicit rest day (typically 0 exercises). */
+  isRestDay?: boolean
 }
 
 export type WorkoutPlan = {
@@ -74,7 +76,7 @@ type PlanState = {
   updateDay: (
     planId: string,
     dayId: string,
-    fields: Partial<Pick<PlanDay, 'name' | 'muscleFocus' | 'dayOfWeek'>>
+    fields: Partial<Pick<PlanDay, 'name' | 'muscleFocus' | 'dayOfWeek' | 'isRestDay'>>
   ) => void
   deleteDay: (planId: string, dayId: string) => void
   reorderDays: (planId: string, dayIds: string[]) => void
@@ -391,6 +393,7 @@ export const usePlanStore = create<PlanState>()(
               if (day.exercises.some((e) => e.exerciseId === input.exerciseId)) return day
               return {
                 ...day,
+                isRestDay: false,
                 exercises: [
                   ...day.exercises,
                   {

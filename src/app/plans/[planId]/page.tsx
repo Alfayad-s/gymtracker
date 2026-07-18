@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Trash2,
   Dumbbell,
+  Coffee,
 } from 'lucide-react'
 import { usePlanStore } from '@/stores/planStore'
 import { WEEKDAY_LABELS } from '@/data/exercises'
@@ -20,6 +21,7 @@ export default function PlanDetailPage() {
   const setActivePlan = usePlanStore((s) => s.setActivePlan)
   const updatePlan = usePlanStore((s) => s.updatePlan)
   const addDay = usePlanStore((s) => s.addDay)
+  const updateDay = usePlanStore((s) => s.updateDay)
   const deleteDay = usePlanStore((s) => s.deleteDay)
   const deletePlan = usePlanStore((s) => s.deletePlan)
 
@@ -66,6 +68,25 @@ export default function PlanDetailPage() {
     setMuscleFocus('')
     setDayOfWeek('')
     router.push(`/plans/${plan.id}/days/${id}`)
+  }
+
+  const markAsRestDay = (dayId: string) => {
+    updateDay(plan.id, dayId, {
+      isRestDay: true,
+      name: 'Rest Day',
+      muscleFocus: 'Rest',
+    })
+  }
+
+  const unmarkRestDay = (dayId: string, dayOfWeekValue: number | null) => {
+    updateDay(plan.id, dayId, {
+      isRestDay: false,
+      name:
+        dayOfWeekValue != null
+          ? WEEKDAY_LABELS[dayOfWeekValue - 1] ?? 'Workout Day'
+          : 'Workout Day',
+      muscleFocus: '',
+    })
   }
 
   return (
@@ -200,52 +221,89 @@ export default function PlanDetailPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {sortedDays.map((day) => (
-            <div
-              key={day.id}
-              className="bg-card border border-border rounded-[24px] overflow-hidden"
-            >
-              <button
-                type="button"
-                onClick={() => router.push(`/plans/${plan.id}/days/${day.id}`)}
-                className="w-full p-4 flex items-center justify-between gap-3 text-left cursor-pointer hover:bg-muted/60"
+          {sortedDays.map((day) => {
+            const showRestMark = day.exercises.length === 0 && !day.isRestDay
+
+            return (
+              <div
+                key={day.id}
+                className={`bg-card border rounded-[24px] overflow-hidden ${
+                  day.isRestDay ? 'border-sky-500/30' : 'border-border'
+                }`}
               >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-foreground">{day.name}</h3>
-                    {day.dayOfWeek && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
-                        {WEEKDAY_LABELS[day.dayOfWeek - 1]?.slice(0, 3)}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-primary font-semibold">
-                    {day.muscleFocus || 'No muscle focus'}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {day.exercises.length} exercise{day.exercises.length === 1 ? '' : 's'}
-                    {day.exercises.length > 0 &&
-                      ` · ${day.exercises
-                        .slice(0, 2)
-                        .map((e) => e.name)
-                        .join(', ')}${day.exercises.length > 2 ? '…' : ''}`}
-                  </p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-              </button>
-              <div className="px-4 pb-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (confirm(`Remove ${day.name}?`)) deleteDay(plan.id, day.id)
-                  }}
-                  className="text-[11px] font-semibold text-destructive cursor-pointer"
+                  onClick={() => router.push(`/plans/${plan.id}/days/${day.id}`)}
+                  className="w-full p-4 flex items-center justify-between gap-3 text-left cursor-pointer hover:bg-muted/60"
                 >
-                  Remove day
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-bold text-foreground">{day.name}</h3>
+                      {day.dayOfWeek && (
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {WEEKDAY_LABELS[day.dayOfWeek - 1]?.slice(0, 3)}
+                        </span>
+                      )}
+                      {day.isRestDay && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 border border-sky-500/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-500">
+                          <Coffee className="w-3 h-3" />
+                          Rest
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-primary font-semibold">
+                      {day.isRestDay
+                        ? 'Recovery · no training'
+                        : day.muscleFocus || 'No muscle focus'}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {day.isRestDay
+                        ? 'Rest day'
+                        : `${day.exercises.length} exercise${day.exercises.length === 1 ? '' : 's'}${
+                            day.exercises.length > 0
+                              ? ` · ${day.exercises
+                                  .slice(0, 2)
+                                  .map((e) => e.name)
+                                  .join(', ')}${day.exercises.length > 2 ? '…' : ''}`
+                              : ''
+                          }`}
+                    </p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                 </button>
+                <div className="px-4 pb-3 flex items-center gap-3 flex-wrap">
+                  {showRestMark && (
+                    <button
+                      type="button"
+                      onClick={() => markAsRestDay(day.id)}
+                      className="h-8 px-3 rounded-full bg-sky-500/15 border border-sky-500/25 text-[11px] font-bold text-sky-500 flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <Coffee className="w-3.5 h-3.5" />
+                      Mark as rest day
+                    </button>
+                  )}
+                  {day.isRestDay && day.exercises.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => unmarkRestDay(day.id, day.dayOfWeek)}
+                      className="text-[11px] font-semibold text-muted-foreground cursor-pointer"
+                    >
+                      Unmark rest day
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Remove ${day.name}?`)) deleteDay(plan.id, day.id)
+                    }}
+                    className="text-[11px] font-semibold text-destructive cursor-pointer"
+                  >
+                    Remove day
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

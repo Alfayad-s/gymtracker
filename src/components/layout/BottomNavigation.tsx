@@ -70,7 +70,7 @@ export function BottomNavigation() {
           <Link
             href="/ai"
             aria-label="Open AI chat"
-            className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg shadow-primary/30 active:scale-95 transition-all cursor-pointer border-4 border-background"
+            className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-all cursor-pointer border-4 border-background"
           >
             <Bot className="w-7 h-7 stroke-[2.5]" />
           </Link>

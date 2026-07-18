@@ -620,7 +620,7 @@ export default function DashboardPage() {
       const jsDay = day.getDay()
       const dayOfWeek = jsDay === 0 ? 7 : jsDay
       const planDay = activePlan.days.find((d) => d.dayOfWeek === dayOfWeek)
-      if (!planDay || planDay.exercises.length === 0) {
+      if (!planDay || planDay.isRestDay || planDay.exercises.length === 0) {
         rest.add(index)
       }
     })
@@ -959,7 +959,7 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
-        ) : todayDay ? (
+        ) : todayDay && !todayDay.isRestDay ? (
           <>
             <div className="flex gap-4">
               <div className="flex-1 min-w-0 space-y-3">
@@ -1073,12 +1073,14 @@ export default function DashboardPage() {
             <div className="flex gap-4 items-start">
               <div className="flex-1 min-w-0">
                 <h2 className="text-xl font-bold text-foreground tracking-tight">
-                  {activePlan ? 'Rest Day' : 'No Active Plan'}
+                  {todayDay?.isRestDay || activePlan ? 'Rest Day' : 'No Active Plan'}
                 </h2>
                 <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                  {activePlan
-                    ? 'Nothing scheduled for today. Take a rest or start a custom session.'
-                    : "Create or activate a workout plan to see today's split here."}
+                  {todayDay?.isRestDay
+                    ? 'Scheduled rest day. Recover well or start a light custom session.'
+                    : activePlan
+                      ? 'Nothing scheduled for today. Take a rest or start a custom session.'
+                      : "Create or activate a workout plan to see today's split here."}
                 </p>
               </div>
               <div className="w-[88px] opacity-40 pointer-events-none">
