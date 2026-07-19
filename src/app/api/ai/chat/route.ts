@@ -10,8 +10,10 @@ import { leanContextForModel } from '@/lib/ai/lean-context'
 import {
   completeGroqAgentChat,
   completeGroqTextChat,
+  completeGroqVisionChat,
   getFailedGeneration,
   isRateLimitError,
+  type GroqContentPart,
   type GroqMessage,
 } from '@/lib/groq'
 import { extractProposalPayload, looksLikeMutationIntent } from '@/lib/ai/extract-proposal'
@@ -23,21 +25,60 @@ type ChatRequest = {
   context?: AgentContext
 }
 
+const MAX_IMAGE_DATA_URL = 900_000
+
+function textFromContent(content: GroqMessage['content']): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((p): p is { type: 'text'; text: string } => p.type === 'text' && typeof p.text === 'string')
+    .map((p) => p.text)
+    .join('\n')
+}
+
+function hasImageParts(content: GroqMessage['content']): boolean {
+  return Array.isArray(content) && content.some((p) => p.type === 'image_url')
+}
+
 function cleanMessages(messages: GroqMessage[] | undefined): GroqMessage[] {
   if (!Array.isArray(messages)) return []
 
-  return messages
-    .filter(
-      (message): message is GroqMessage & { content: string } =>
-        (message.role === 'user' || message.role === 'assistant') &&
-        typeof message.content === 'string' &&
-        message.content.trim().length > 0
-    )
-    .slice(-8)
-    .map((message) => ({
-      role: message.role,
-      content: message.content.trim().slice(0, 1500),
-    }))
+  const cleaned: GroqMessage[] = []
+
+  for (const message of messages) {
+    if (message.role !== 'user' && message.role !== 'assistant') continue
+
+    if (typeof message.content === 'string') {
+      const content = message.content.trim().slice(0, 4000)
+      if (content) cleaned.push({ role: message.role, content })
+      continue
+    }
+
+    if (!Array.isArray(message.content)) continue
+
+    const parts: GroqContentPart[] = []
+    for (const part of message.content) {
+      if (part.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
+        parts.push({ type: 'text', text: part.text.trim().slice(0, 4000) })
+        continue
+      }
+      if (
+        part.type === 'image_url' &&
+        typeof part.image_url?.url === 'string' &&
+        (part.image_url.url.startsWith('data:image/') ||
+          /^https?:\/\//i.test(part.image_url.url)) &&
+        part.image_url.url.length <= MAX_IMAGE_DATA_URL
+      ) {
+        parts.push({ type: 'image_url', image_url: { url: part.image_url.url } })
+      }
+    }
+
+    if (parts.length > 0) {
+      cleaned.push({ role: message.role, content: parts })
+    }
+  }
+
+  return cleaned.slice(-10)
 }
 
 function sanitizeContext(context: unknown): AgentContext | null {
@@ -179,12 +220,16 @@ export async function POST(request: Request) {
     { role: 'system', content: AGENT_SYSTEM_PROMPT },
     { role: 'system', content: buildContextBlock(context) },
   ]
-  const lastContent = userMessages[userMessages.length - 1]?.content
-  const lastUserText = typeof lastContent === 'string' ? lastContent : ''
+  const lastMessage = userMessages[userMessages.length - 1]
+  const lastUserText = textFromContent(lastMessage.content)
+  const lastHasImages = hasImageParts(lastMessage.content)
 
   let ragHitCount = 0
   try {
-    const chunks = await retrieveRagChunks({ userId: user.id, query: lastUserText })
+    const chunks = await retrieveRagChunks({
+      userId: user.id,
+      query: lastUserText || 'workout',
+    })
     ragHitCount = chunks.length
     const ragBlock = formatRagContextBlock(chunks)
     if (ragBlock) {
@@ -192,6 +237,40 @@ export async function POST(request: Request) {
     }
   } catch (err) {
     console.warn('RAG retrieval skipped:', err)
+  }
+
+  // Multimodal turn → vision model (still tries to extract action proposals from text)
+  if (lastHasImages) {
+    try {
+      const visionText = await completeGroqVisionChat(
+        [
+          ...systemMessages,
+          {
+            role: 'system',
+            content:
+              'The user attached image(s). Describe what you see only as needed for fitness coaching. If they want create/update/delete in the app, reply with propose_gymtrack_actions JSON when appropriate.',
+          },
+          ...userMessages,
+        ],
+        { maxTokens: 1800, temperature: 0.25 }
+      )
+
+      const embedded = extractProposalPayload(visionText)
+      if (embedded?.actions && looksLikeMutationIntent(lastUserText || 'update')) {
+        return proposalResponse(embedded, context, visionText, ragHitCount)
+      }
+
+      return NextResponse.json({
+        message: { role: 'assistant', content: visionText.trim() || 'I can see the image — what would you like me to do with it?' },
+        ragHits: ragHitCount,
+      })
+    } catch (error) {
+      console.error('AI vision chat failed:', error)
+      if (isRateLimitError(error)) {
+        return NextResponse.json({ error: friendlyAiError(error) }, { status: 429 })
+      }
+      return NextResponse.json({ error: friendlyAiError(error) }, { status: 503 })
+    }
   }
 
   try {

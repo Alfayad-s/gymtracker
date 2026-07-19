@@ -2,23 +2,34 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Bot, Volume2, VolumeX } from 'lucide-react'
+import { ArrowLeft, Bot, FileText, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { AgentProposalCard } from '@/components/ai/AgentProposalCard'
 import { FormattedAiMessage } from '@/components/body-composition/AnalysisSections'
 import { PromptInputBox } from '@/components/ui/ai-prompt-box'
 import type { AgentProposal } from '@/lib/ai/agent-types'
 import { buildAgentContext } from '@/lib/ai/build-agent-context'
+import {
+  fileToCompressedDataUrl,
+  isSupportedChatFile,
+  readTextFile,
+} from '@/lib/ai/chat-files'
 import { executeAgentActions } from '@/lib/ai/execute-agent-actions'
 import { stripMarkdown } from '@/lib/body-composition/parse-analysis'
 import { useAuthStore } from '@/stores/authStore'
+import {
+  type AiChatMessage,
+  type ChatAttachment,
+  useAiChatStore,
+} from '@/stores/aiChatStore'
 import { useProfileStore } from '@/stores/profileStore'
 
-type ChatMessage = {
-  id: string
+type ApiContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+type ApiChatMessage = {
   role: 'user' | 'assistant'
-  content: string
-  animate?: boolean
-  proposal?: AgentProposal
+  content: string | ApiContentPart[]
 }
 
 const STARTERS = [
@@ -83,6 +94,35 @@ function TypewriterText({
   )
 }
 
+function toApiMessages(messages: AiChatMessage[]): ApiChatMessage[] {
+  return messages
+    .filter((m) => m.role === 'user' || (m.role === 'assistant' && !m.proposal))
+    .map((m) => {
+      const images = (m.attachments ?? []).filter((a) => a.kind === 'image' && a.dataUrl)
+      const textBits = [
+        m.content.trim(),
+        ...(m.attachments ?? [])
+          .filter((a) => a.kind === 'text' && a.text)
+          .map((a) => `\n\n[Attached ${a.name}]\n${a.text}`),
+      ]
+        .filter(Boolean)
+        .join('')
+
+      if (images.length === 0) {
+        return { role: m.role, content: textBits || '(attachment)' }
+      }
+
+      const parts: ApiContentPart[] = [
+        { type: 'text', text: textBits || 'Please look at the attached image(s).' },
+        ...images.map((img) => ({
+          type: 'image_url' as const,
+          image_url: { url: img.dataUrl! },
+        })),
+      ]
+      return { role: m.role, content: parts }
+    })
+}
+
 export default function AiChatPage() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
@@ -98,15 +138,11 @@ export default function AiChatPage() {
     user?.email?.charAt(0) ||
     'U'
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content:
-        'Hi, I am your GymTrack AI agent. I can answer workout questions and propose app changes — plans, workouts, history, progress, and settings — after you confirm each action.',
-      animate: false,
-    },
-  ])
+  const messages = useAiChatStore((s) => s.messages)
+  const setMessages = useAiChatStore((s) => s.setMessages)
+  const clearChat = useAiChatStore((s) => s.clearChat)
+  const hydrated = useAiChatStore((s) => s.hydrated)
+
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastRagHits, setLastRagHits] = useState(0)
@@ -120,8 +156,16 @@ export default function AiChatPage() {
   }, [])
 
   useEffect(() => {
+    const finish = () => useAiChatStore.getState().setHydrated(true)
+    const unsub = useAiChatStore.persist.onFinishHydration(finish)
+    if (useAiChatStore.persist.hasHydrated()) finish()
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated) return
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, isLoading])
+  }, [messages, isLoading, hydrated])
 
   useEffect(() => {
     return () => {
@@ -139,7 +183,7 @@ export default function AiChatPage() {
   }, [])
 
   const readAloud = useCallback(
-    (message: ChatMessage) => {
+    (message: AiChatMessage) => {
       if (!speechSupported) return
 
       if (speakingId === message.id) {
@@ -159,13 +203,16 @@ export default function AiChatPage() {
     [speakingId, speechSupported, stopSpeaking]
   )
 
-  const markTyped = useCallback((id: string) => {
-    setMessages((current) =>
-      current.map((message) =>
-        message.id === id ? { ...message, animate: false } : message
+  const markTyped = useCallback(
+    (id: string) => {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === id ? { ...message, animate: false } : message
+        )
       )
-    )
-  }, [])
+    },
+    [setMessages]
+  )
 
   const updateProposal = useCallback(
     (messageId: string, patch: Partial<AgentProposal>) => {
@@ -177,7 +224,7 @@ export default function AiChatPage() {
         )
       )
     },
-    []
+    [setMessages]
   )
 
   const handleConfirmProposal = useCallback(
@@ -209,6 +256,7 @@ export default function AiChatPage() {
             role: 'assistant',
             content: `Done. ${result.results.map((r) => r.message).join(' ')}`,
             animate: true,
+            createdAt: new Date().toISOString(),
           },
         ])
       } catch (err) {
@@ -220,7 +268,7 @@ export default function AiChatPage() {
         executingRef.current = false
       }
     },
-    [messages, stopSpeaking, updateProposal]
+    [messages, setMessages, stopSpeaking, updateProposal]
   )
 
   const handleCancelProposal = useCallback(
@@ -233,15 +281,17 @@ export default function AiChatPage() {
           role: 'assistant',
           content: 'Cancelled — no changes were made.',
           animate: true,
+          createdAt: new Date().toISOString(),
         },
       ])
     },
-    [updateProposal]
+    [setMessages, updateProposal]
   )
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, files: File[] = []) => {
     const trimmed = text.trim()
-    if (!trimmed || isLoading) return
+    const usableFiles = files.filter(isSupportedChatFile).slice(0, 3)
+    if ((!trimmed && usableFiles.length === 0) || isLoading) return
 
     const hasPending = messages.some((m) => m.proposal?.status === 'pending')
     if (hasPending) {
@@ -250,24 +300,50 @@ export default function AiChatPage() {
     }
 
     stopSpeaking()
-
-    const nextMessages: ChatMessage[] = [
-      ...messages,
-      { id: uid(), role: 'user', content: trimmed },
-    ]
-    setMessages(nextMessages)
     setError(null)
     setIsLoading(true)
 
     try {
+      const attachments: ChatAttachment[] = []
+      for (const file of usableFiles) {
+        if (file.type.startsWith('image/')) {
+          const dataUrl = await fileToCompressedDataUrl(file)
+          attachments.push({
+            id: uid(),
+            name: file.name,
+            mimeType: 'image/jpeg',
+            kind: 'image',
+            dataUrl,
+          })
+        } else {
+          const textBody = await readTextFile(file)
+          attachments.push({
+            id: uid(),
+            name: file.name,
+            mimeType: file.type || 'text/plain',
+            kind: 'text',
+            text: textBody,
+          })
+        }
+      }
+
+      const userMessage: AiChatMessage = {
+        id: uid(),
+        role: 'user',
+        content: trimmed || (attachments.some((a) => a.kind === 'image') ? 'What do you see in this image?' : 'Please review the attached file.'),
+        attachments: attachments.length ? attachments : undefined,
+        createdAt: new Date().toISOString(),
+      }
+
+      const nextMessages = [...messages, userMessage]
+      setMessages(nextMessages)
+
       const context = buildAgentContext()
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: nextMessages
-            .filter((m) => m.role === 'user' || (m.role === 'assistant' && !m.proposal))
-            .map(({ role, content }) => ({ role, content })),
+          messages: toApiMessages(nextMessages),
           context,
         }),
       })
@@ -291,11 +367,12 @@ export default function AiChatPage() {
 
       setLastRagHits(typeof data.ragHits === 'number' ? data.ragHits : 0)
 
-      const assistantMessage: ChatMessage = {
+      const assistantMessage: AiChatMessage = {
         id: uid(),
         role: 'assistant',
         content: data.message.content,
         animate: true,
+        createdAt: new Date().toISOString(),
       }
 
       if (data.message.proposal) {
@@ -311,6 +388,14 @@ export default function AiChatPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      </div>
+    )
   }
 
   return (
@@ -329,9 +414,25 @@ export default function AiChatPage() {
             <h1 className="text-lg font-bold text-foreground tracking-tight">GymTrack AI</h1>
             <p className="text-[11px] text-muted-foreground">
               Agentic workout coach
-              {lastRagHits > 0 ? ` · Using ${lastRagHits} memory hit${lastRagHits === 1 ? '' : 's'}` : ''}
+              {lastRagHits > 0
+                ? ` · Using ${lastRagHits} memory hit${lastRagHits === 1 ? '' : 's'}`
+                : ''}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm('Clear this chat history?')) {
+                stopSpeaking()
+                clearChat()
+              }
+            }}
+            className="absolute right-0 p-2 bg-card border border-border rounded-xl text-muted-foreground hover:text-foreground cursor-pointer active:scale-95 transition-transform"
+            aria-label="Clear chat"
+            title="Clear chat"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -354,6 +455,30 @@ export default function AiChatPage() {
               )}
 
               <div className={`max-w-[85%] ${isUser ? '' : 'space-y-2'}`}>
+                {message.attachments && message.attachments.length > 0 && (
+                  <div className={`mb-1.5 flex flex-wrap gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                    {message.attachments.map((att) =>
+                      att.kind === 'image' && att.dataUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={att.id}
+                          src={att.dataUrl}
+                          alt={att.name}
+                          className="h-28 w-28 rounded-2xl object-cover border border-border"
+                        />
+                      ) : (
+                        <div
+                          key={att.id}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/60 px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          {att.name}
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+
                 {isUser ? (
                   <div className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-primary text-primary-foreground rounded-[22px]">
                     {message.content}
@@ -466,9 +591,9 @@ export default function AiChatPage() {
         <div className="px-4">
           <PromptInputBox
             isLoading={isLoading}
-            placeholder="Ask or tell me what to change in GymTrack..."
-            onSend={(message) => {
-              void sendMessage(message)
+            placeholder="Ask, attach a photo, or hold the mic…"
+            onSend={(message, files) => {
+              void sendMessage(message, files ?? [])
             }}
           />
         </div>

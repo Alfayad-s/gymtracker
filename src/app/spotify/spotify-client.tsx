@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Loader2, Music2 } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import { SpotifyConnectCard } from '@/components/spotify/spotify-connect-card'
 import { SpotifyPlayer } from '@/components/spotify/spotify-player'
 import {
@@ -121,7 +121,12 @@ export default function SpotifyPage() {
         </button>
         <div>
           <h1 className="text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
-            <Music2 className="w-5 h-5 text-[#1DB954]" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/spotify-logo.png"
+              alt=""
+              className="w-6 h-6 rounded-full object-cover"
+            />
             Spotify
           </h1>
           <p className="text-[11px] text-muted-foreground">Workout soundtrack</p>

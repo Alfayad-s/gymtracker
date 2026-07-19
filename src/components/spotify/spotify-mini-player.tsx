@@ -58,7 +58,8 @@ export function SpotifyMiniPlayer({
           className
         )}
       >
-        <Music2 className="w-4 h-4 text-[#1DB954] shrink-0" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/spotify-logo.png" alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-bold text-foreground">Add workout music</p>
           <p className="text-[10px] text-muted-foreground">Connect Spotify</p>

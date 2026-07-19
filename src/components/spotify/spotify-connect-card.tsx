@@ -1,8 +1,9 @@
 'use client'
 
-import { Music2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { SpotifyConnectionPublic } from '@/lib/spotify/types'
+
+const SPOTIFY_LOGO = '/spotify-logo.png'
 
 export function SpotifyConnectCard({
   connection,
@@ -26,9 +27,12 @@ export function SpotifyConnectCard({
             className="w-14 h-14 rounded-2xl object-cover border border-border"
           />
         ) : (
-          <div className="w-14 h-14 rounded-2xl bg-[#1DB954]/15 border border-[#1DB954]/30 flex items-center justify-center">
-            <Music2 className="w-6 h-6 text-[#1DB954]" />
-          </div>
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={SPOTIFY_LOGO}
+            alt="Spotify"
+            className="w-14 h-14 rounded-2xl object-cover border border-[#1DB954]/30 bg-black"
+          />
         )}
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-bold uppercase tracking-wider text-[#1DB954]">
@@ -60,8 +64,10 @@ export function SpotifyConnectCard({
         <div className="flex gap-2">
           <a
             href="/spotify"
-            className="flex-1 h-11 rounded-[14px] bg-[#1DB954] text-black text-xs font-bold flex items-center justify-center active:scale-[0.98]"
+            className="flex-1 h-11 rounded-[14px] bg-[#1DB954] text-black text-xs font-bold flex items-center justify-center gap-2 active:scale-[0.98]"
           >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={SPOTIFY_LOGO} alt="" className="w-5 h-5 rounded-full object-cover" />
             Open music
           </a>
           <Button
@@ -76,8 +82,10 @@ export function SpotifyConnectCard({
       ) : (
         <a
           href="/api/spotify/auth"
-          className="flex h-11 w-full items-center justify-center rounded-[14px] bg-[#1DB954] text-black text-xs font-bold active:scale-[0.98]"
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-[14px] bg-[#1DB954] text-black text-xs font-bold active:scale-[0.98]"
         >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={SPOTIFY_LOGO} alt="" className="w-5 h-5 rounded-full object-cover" />
           Connect with Spotify
         </a>
       )}

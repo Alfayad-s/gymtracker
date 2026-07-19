@@ -73,9 +73,9 @@ export function BottomNavigation() {
   const mealsActive = isTabActive('/meals')
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 sm:max-w-[430px] mx-auto z-50">
+    <div className="fixed bottom-0 left-0 right-0 sm:max-w-[430px] mx-auto z-50 bg-black">
       <div
-        className={`relative border-t border-border/60 pt-3.5 pb-[max(1.1rem,env(safe-area-inset-bottom))] px-4 overflow-visible min-h-[4.75rem] ${
+        className={`relative border-t border-border/60 pt-3.5 pb-3.5 px-4 overflow-visible min-h-[4.75rem] ${
           showRainVideo ? '' : 'bg-black'
         }`}
       >
@@ -184,6 +184,12 @@ export function BottomNavigation() {
           </Link>
         </div>
       </div>
+      {/* Paint phone home-indicator / gesture safe area the same black as the nav */}
+      <div
+        className="w-full bg-black"
+        style={{ height: 'env(safe-area-inset-bottom, 0px)' }}
+        aria-hidden
+      />
     </div>
   )
 }

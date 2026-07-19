@@ -111,6 +111,30 @@ interface PromptInputBoxProps {
   className?: string
 }
 
+type SpeechRecognitionLike = {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  start: () => void
+  stop: () => void
+  abort: () => void
+  onresult: ((event: {
+    resultIndex: number
+    results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>
+  }) => void) | null
+  onerror: ((event: { error?: string }) => void) | null
+  onend: (() => void) | null
+}
+
+function getSpeechRecognition(): (new () => SpeechRecognitionLike) | null {
+  if (typeof window === 'undefined') return null
+  const w = window as Window & {
+    SpeechRecognition?: new () => SpeechRecognitionLike
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike
+  }
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
+}
+
 export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxProps>(
   ({ onSend = () => {}, isLoading = false, placeholder = 'Type your message here...', className }, ref) => {
     useStyleInjection()
@@ -121,12 +145,15 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
     const [selectedImage, setSelectedImage] = React.useState<string | null>(null)
     const [isRecording, setIsRecording] = React.useState(false)
     const [recordingSeconds, setRecordingSeconds] = React.useState(0)
+    const [voiceError, setVoiceError] = React.useState<string | null>(null)
     const [showSearch, setShowSearch] = React.useState(false)
     const [showThink, setShowThink] = React.useState(false)
     const [showCanvas, setShowCanvas] = React.useState(false)
     const uploadInputRef = React.useRef<HTMLInputElement>(null)
     const textareaRef = React.useRef<HTMLTextAreaElement>(null)
     const recordingStartedAt = React.useRef<number | null>(null)
+    const recognitionRef = React.useRef<SpeechRecognitionLike | null>(null)
+    const baseInputRef = React.useRef('')
 
     React.useEffect(() => {
       if (!textareaRef.current) return
@@ -147,16 +174,40 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
       return () => clearInterval(id)
     }, [isRecording])
 
+    React.useEffect(() => {
+      return () => {
+        recognitionRef.current?.abort()
+        recognitionRef.current = null
+      }
+    }, [])
+
     const processFile = React.useCallback((file: File) => {
-      if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) return
-      setFiles([file])
-      const reader = new FileReader()
-      reader.onload = (e) => setFilePreviews({ [file.name]: e.target?.result as string })
-      reader.readAsDataURL(file)
+      const isImage = file.type.startsWith('image/')
+      const isText =
+        file.type.startsWith('text/') ||
+        /\.(txt|md|csv|json|log)$/i.test(file.name)
+      if ((!isImage && !isText) || file.size > 12 * 1024 * 1024) return
+
+      setFiles((prev) => {
+        const next = [...prev.filter((f) => f.name !== file.name), file].slice(-3)
+        return next
+      })
+
+      if (isImage) {
+        const reader = new FileReader()
+        reader.onload = (e) =>
+          setFilePreviews((prev) => ({
+            ...prev,
+            [file.name]: e.target?.result as string,
+          }))
+        reader.readAsDataURL(file)
+      } else {
+        setFilePreviews((prev) => ({ ...prev, [file.name]: '' }))
+      }
     }, [])
 
     const handleSubmit = () => {
-      if (!input.trim() && files.length === 0) return
+      if ((!input.trim() && files.length === 0) || isLoading) return
       let messagePrefix = ''
       if (showSearch) messagePrefix = '[Search: '
       else if (showThink) messagePrefix = '[Think: '
@@ -166,13 +217,84 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
       setInput('')
       setFiles([])
       setFilePreviews({})
+      setVoiceError(null)
     }
 
-    const stopRecording = () => {
-      const duration = recordingSeconds
-      setIsRecording(false)
-      onSend(`[Voice message - ${duration} seconds]`, [])
-    }
+    const stopRecording = React.useCallback(
+      (send = false) => {
+        recognitionRef.current?.stop()
+        recognitionRef.current = null
+        setIsRecording(false)
+        if (!send) return
+        window.setTimeout(() => {
+          setInput((current) => {
+            const text = current.trim()
+            if (text) onSend(text, [])
+            return text ? '' : current
+          })
+        }, 280)
+      },
+      [onSend]
+    )
+
+    const startRecording = React.useCallback(() => {
+      const SpeechRecognitionCtor = getSpeechRecognition()
+      if (!SpeechRecognitionCtor) {
+        setVoiceError('Voice input is not supported in this browser. Try Chrome or Safari.')
+        return
+      }
+
+      setVoiceError(null)
+      baseInputRef.current = input
+      const recognition = new SpeechRecognitionCtor()
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.lang = typeof navigator !== 'undefined' ? navigator.language || 'en-US' : 'en-US'
+
+      recognition.onresult = (event) => {
+        let finalChunk = ''
+        let interim = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i]
+          const piece = result[0]?.transcript ?? ''
+          if (result.isFinal) finalChunk += piece
+          else interim += piece
+        }
+        if (finalChunk) {
+          baseInputRef.current = `${baseInputRef.current}${baseInputRef.current ? ' ' : ''}${finalChunk.trim()}`.trim()
+        }
+        const live = `${baseInputRef.current}${interim ? ` ${interim}` : ''}`.trim()
+        setInput(live)
+      }
+
+      recognition.onerror = (event) => {
+        const code = event.error || 'error'
+        if (code === 'not-allowed' || code === 'service-not-allowed') {
+          setVoiceError('Microphone permission denied.')
+        } else if (code !== 'aborted' && code !== 'no-speech') {
+          setVoiceError(`Voice error: ${code}`)
+        }
+        setIsRecording(false)
+        recognitionRef.current = null
+      }
+
+      recognition.onend = () => {
+        // If user didn't stop intentionally, recognition may auto-end — keep UI in sync
+        if (recognitionRef.current === recognition) {
+          setIsRecording(false)
+          recognitionRef.current = null
+        }
+      }
+
+      try {
+        recognition.start()
+        recognitionRef.current = recognition
+        setIsRecording(true)
+      } catch {
+        setVoiceError('Could not start voice input.')
+        setIsRecording(false)
+      }
+    }, [input])
 
     const hasContent = input.trim() !== '' || files.length > 0
     const formatTime = (seconds: number) => {
@@ -252,17 +374,18 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
           onDrop={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            const dropped = Array.from(e.dataTransfer.files).filter((f) =>
-              f.type.startsWith('image/')
-            )
-            if (dropped[0]) processFile(dropped[0])
+            const dropped = Array.from(e.dataTransfer.files)
+            for (const file of dropped.slice(0, 3)) processFile(file)
           }}
         >
           {files.length > 0 && !isRecording && (
             <div className="mb-2 flex flex-wrap gap-2">
               {files.map((file, index) => (
-                <div key={file.name} className="relative h-16 w-16 overflow-hidden rounded-xl">
-                  {filePreviews[file.name] && (
+                <div
+                  key={file.name}
+                  className="relative h-16 w-16 overflow-hidden rounded-xl border border-border bg-muted"
+                >
+                  {filePreviews[file.name] ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={filePreviews[file.name]}
@@ -270,12 +393,20 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                       className="h-full w-full cursor-pointer object-cover"
                       onClick={() => setSelectedImage(filePreviews[file.name])}
                     />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center px-1 text-center text-[9px] font-semibold text-muted-foreground leading-tight">
+                      {file.name}
+                    </div>
                   )}
                   <button
                     type="button"
                     onClick={() => {
                       setFiles((prev) => prev.filter((_, i) => i !== index))
-                      setFilePreviews({})
+                      setFilePreviews((prev) => {
+                        const next = { ...prev }
+                        delete next[file.name]
+                        return next
+                      })
                     }}
                     className="absolute top-1 right-1 rounded-full bg-black/70 p-0.5"
                   >
@@ -314,21 +445,32 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
             <div className="flex w-full flex-col items-center justify-center py-3">
               <div className="mb-3 flex items-center gap-2">
                 <div className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
-                <span className="font-mono text-sm text-muted-foreground">{formatTime(recordingSeconds)}</span>
+                <span className="font-mono text-sm text-muted-foreground">
+                  Listening… {formatTime(recordingSeconds)}
+                </span>
               </div>
+              {input.trim() && (
+                <p className="mb-2 max-w-full px-2 text-center text-xs text-foreground/80 line-clamp-3">
+                  {input}
+                </p>
+              )}
               <div className="flex h-10 w-full items-center justify-center gap-0.5 px-4">
                 {Array.from({ length: 32 }).map((_, i) => (
                   <div
                     key={i}
                     className="w-0.5 animate-pulse rounded-full bg-foreground/40"
                     style={{
-                      height: `${Math.max(15, ((i * 37) % 100))}%`,
+                      height: `${Math.max(15, (i * 37) % 100)}%`,
                       animationDelay: `${i * 0.05}s`,
                     }}
                   />
                 ))}
               </div>
             </div>
+          )}
+
+          {voiceError && (
+            <p className="pb-1 text-[11px] text-destructive">{voiceError}</p>
           )}
 
           <div className="flex items-center justify-between gap-2 pt-1">
@@ -349,17 +491,18 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                       <Paperclip className="h-5 w-5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Upload image</TooltipContent>
+                  <TooltipContent>Attach image or text file</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <input
                 ref={uploadInputRef}
                 type="file"
                 className="hidden"
-                accept="image/*"
+                accept="image/*,.txt,.md,.csv,.json,.log,text/*"
+                multiple
                 onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) processFile(file)
+                  const list = Array.from(e.target.files ?? [])
+                  for (const file of list.slice(0, 3)) processFile(file)
                   e.target.value = ''
                 }}
               />
@@ -406,16 +549,16 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                     : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
               )}
               onClick={() => {
-                if (isRecording) stopRecording()
+                if (isRecording) stopRecording(true)
                 else if (hasContent) handleSubmit()
-                else setIsRecording(true)
+                else startRecording()
               }}
               disabled={isLoading && !hasContent}
               aria-label={
                 isLoading
                   ? 'Stop generation'
                   : isRecording
-                    ? 'Stop recording'
+                    ? 'Stop and send voice'
                     : hasContent
                       ? 'Send message'
                       : 'Voice message'
