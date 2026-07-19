@@ -109,6 +109,7 @@ export default function AiChatPage() {
   ])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lastRagHits, setLastRagHits] = useState(0)
   const [speakingId, setSpeakingId] = useState<string | null>(null)
   const [speechSupported, setSpeechSupported] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -277,6 +278,7 @@ export default function AiChatPage() {
           proposal?: Omit<AgentProposal, 'status'>
         }
         error?: string
+        ragHits?: number
       }
 
       if (!res.ok) {
@@ -286,6 +288,8 @@ export default function AiChatPage() {
       if (!data.message) {
         throw new Error('AI returned an empty response')
       }
+
+      setLastRagHits(typeof data.ragHits === 'number' ? data.ragHits : 0)
 
       const assistantMessage: ChatMessage = {
         id: uid(),
@@ -323,7 +327,10 @@ export default function AiChatPage() {
           </button>
           <div className="text-center">
             <h1 className="text-lg font-bold text-foreground tracking-tight">GymTrack AI</h1>
-            <p className="text-[11px] text-muted-foreground">Agentic workout coach</p>
+            <p className="text-[11px] text-muted-foreground">
+              Agentic workout coach
+              {lastRagHits > 0 ? ` · Using ${lastRagHits} memory hit${lastRagHits === 1 ? '' : 's'}` : ''}
+            </p>
           </div>
         </div>
       </div>

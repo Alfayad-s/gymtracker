@@ -277,6 +277,28 @@ export default function WorkoutPage() {
       if (result.totalSets > 0) {
         addWorkout(result)
 
+        void import('@/lib/ai/rag/client-index').then(({ indexRagSource }) => {
+          indexRagSource({
+            sourceType: 'workout',
+            sourceId: result.id,
+            workout: {
+              id: result.id,
+              name: result.name,
+              completedAt: result.completedAt,
+              startedAt: result.startedAt,
+              durationMinutes: result.durationMinutes,
+              volumeKg: result.volumeKg,
+              totalSets: result.totalSets,
+              exercises: result.exercises.map((ex) => ({
+                name: ex.name,
+                sets: ex.sets,
+                bestSet: ex.bestSet,
+                loggedSets: ex.loggedSets,
+              })),
+            },
+          })
+        })
+
         const volumeByGroup = new Map<RecoveryGroup, number>()
         for (const ex of result.exercises) {
           const groups = recoveryGroupsForExercise(ex.exerciseId, ex.name)

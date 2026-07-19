@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { completeGroqTextChat } from '@/lib/groq'
 import { getReportForUser, listReportsForUser } from '@/lib/body-composition/db'
+import { formatRagContextBlock, retrieveRagChunks } from '@/lib/ai/rag'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -34,11 +35,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Upload a report first' }, { status: 404 })
   }
 
+  let ragBlock = ''
+  let ragHits = 0
+  try {
+    const chunks = await retrieveRagChunks({ userId: user.id, query: question, topK: 5 })
+    ragHits = chunks.length
+    ragBlock = formatRagContextBlock(chunks, 2000)
+  } catch {
+    // continue without RAG
+  }
+
   try {
     const answer = await completeGroqTextChat([
       {
         role: 'system',
-        content: `You are GymTrack AI Coach for body composition. Answer ONLY using the provided report data. If the report lacks data, say so. Be concise, actionable, and personalized. No medical diagnosis disclaimers longer than one short sentence.
+        content: `You are GymTrack AI Coach for body composition. Answer using the provided report data and any retrieved memory about prior scans. If the report lacks data, say so. Be concise, actionable, and personalized. No medical diagnosis disclaimers longer than one short sentence.
 
 Formatting:
 - For multi-part answers use ## Section Title headings (e.g. ## BMI Assessment, ## Muscle Balance, ## Recommendations)
@@ -48,10 +59,10 @@ Formatting:
       },
       {
         role: 'user',
-        content: `Report JSON:\n${JSON.stringify(report)}\n\nQuestion: ${question.slice(0, 500)}`,
+        content: `Report JSON:\n${JSON.stringify(report)}\n\n${ragBlock ? `${ragBlock}\n\n` : ''}Question: ${question.slice(0, 500)}`,
       },
     ])
-    return NextResponse.json({ answer })
+    return NextResponse.json({ answer, ragHits })
   } catch (error) {
     console.error('Body composition coach failed:', error)
     return NextResponse.json(

@@ -246,7 +246,7 @@ export default function MealsPage() {
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
-    addMeal({
+    const mealId = addMeal({
       date,
       type,
       name: name.trim(),
@@ -256,6 +256,23 @@ export default function MealsPage() {
       fatG: Number(fat) || 0,
       imageUrl: imageUrl || undefined,
       notes: aiNote || undefined,
+    })
+    void import('@/lib/ai/rag/client-index').then(({ indexRagSource }) => {
+      indexRagSource({
+        sourceType: 'meal',
+        sourceId: mealId,
+        meal: {
+          id: mealId,
+          name: name.trim(),
+          description: aiNote || undefined,
+          mealType: type,
+          loggedAt: date,
+          calories: Number(calories) || 0,
+          protein: Number(protein) || 0,
+          carbs: Number(carbs) || 0,
+          fat: Number(fat) || 0,
+        },
+      })
     })
     const nextProtein =
       summarizeMeals(useMealStore.getState().getMealsForDate(date)).proteinG

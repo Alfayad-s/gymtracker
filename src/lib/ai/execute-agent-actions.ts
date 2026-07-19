@@ -139,6 +139,27 @@ function executeOne(action: AgentAction): { ok: boolean; message: string } {
         if (!result) return { ok: false, message: 'No active workout to finish' }
         if (result.totalSets > 0) {
           useHistoryStore.getState().addWorkout(result)
+          void import('@/lib/ai/rag/client-index').then(({ indexRagSource }) => {
+            indexRagSource({
+              sourceType: 'workout',
+              sourceId: result.id,
+              workout: {
+                id: result.id,
+                name: result.name,
+                completedAt: result.completedAt,
+                startedAt: result.startedAt,
+                durationMinutes: result.durationMinutes,
+                volumeKg: result.volumeKg,
+                totalSets: result.totalSets,
+                exercises: result.exercises.map((ex) => ({
+                  name: ex.name,
+                  sets: ex.sets,
+                  bestSet: ex.bestSet,
+                  loggedSets: ex.loggedSets,
+                })),
+              },
+            })
+          })
           const volumeByGroup = new Map<string, number>()
           for (const ex of result.exercises) {
             const groups = recoveryGroupsForExercise(ex.exerciseId, ex.name)

@@ -16,6 +16,7 @@ import {
 } from '@/lib/groq'
 import { extractProposalPayload, looksLikeMutationIntent } from '@/lib/ai/extract-proposal'
 import { validateRawProposal } from '@/lib/ai/validate-proposal'
+import { formatRagContextBlock, retrieveRagChunks } from '@/lib/ai/rag'
 
 type ChatRequest = {
   messages?: GroqMessage[]
@@ -78,7 +79,8 @@ function friendlyAiError(error: unknown): string {
 function proposalResponse(
   raw: { summary?: string; actions?: unknown[] },
   context: AgentContext,
-  assistantText?: string | null
+  assistantText?: string | null,
+  ragHits = 0
 ) {
   const validated = validateRawProposal(raw, context)
   if (!validated.ok) {
@@ -89,6 +91,7 @@ function proposalResponse(
           assistantText?.trim() ||
           `I couldn't apply that change (${validated.error}). Try naming the exercise/plan and the create/update/delete action clearly.`,
       },
+      ragHits,
     })
   }
 
@@ -98,6 +101,7 @@ function proposalResponse(
       content: assistantText?.trim() || validated.proposal.summary,
       proposal: validated.proposal,
     },
+    ragHits,
   })
 }
 
@@ -105,7 +109,8 @@ async function jsonFallbackResponse(
   systemMessages: GroqMessage[],
   userMessages: GroqMessage[],
   context: AgentContext,
-  lastUserText: string
+  lastUserText: string,
+  ragHits = 0
 ) {
   const text = await completeGroqTextChat([
     ...systemMessages,
@@ -115,7 +120,7 @@ async function jsonFallbackResponse(
 
   const extracted = extractProposalPayload(text)
   if (extracted?.actions) {
-    return proposalResponse(extracted, context)
+    return proposalResponse(extracted, context, null, ragHits)
   }
 
   if (looksLikeMutationIntent(lastUserText) && !extracted) {
@@ -129,11 +134,13 @@ async function jsonFallbackResponse(
             ? `I can update "${latest.name}" if you confirm. Say something like: "Update ${latest.name} with these steps: …"`
             : 'Tell me what to create, update, or delete (include the exercise/plan name).'),
       },
+      ragHits,
     })
   }
 
   return NextResponse.json({
     message: { role: 'assistant', content: text.trim() || 'How can I help with your training?' },
+    ragHits,
   })
 }
 
@@ -171,6 +178,18 @@ export async function POST(request: Request) {
   const lastContent = userMessages[userMessages.length - 1]?.content
   const lastUserText = typeof lastContent === 'string' ? lastContent : ''
 
+  let ragHitCount = 0
+  try {
+    const chunks = await retrieveRagChunks({ userId: user.id, query: lastUserText })
+    ragHitCount = chunks.length
+    const ragBlock = formatRagContextBlock(chunks)
+    if (ragBlock) {
+      systemMessages.push({ role: 'system', content: ragBlock })
+    }
+  } catch (err) {
+    console.warn('RAG retrieval skipped:', err)
+  }
+
   try {
     const result = await completeGroqAgentChat(
       [...systemMessages, ...userMessages],
@@ -180,15 +199,16 @@ export async function POST(request: Request) {
     if (result.kind === 'text') {
       const embedded = extractProposalPayload(result.content)
       if (embedded?.actions && looksLikeMutationIntent(lastUserText)) {
-        return proposalResponse(embedded, context, null)
+        return proposalResponse(embedded, context, null, ragHitCount)
       }
       return NextResponse.json({
         message: { role: 'assistant', content: result.content },
+        ragHits: ragHitCount,
       })
     }
 
     if (result.toolName !== 'propose_gymtrack_actions') {
-      return jsonFallbackResponse(systemMessages, userMessages, context, lastUserText)
+      return jsonFallbackResponse(systemMessages, userMessages, context, lastUserText, ragHitCount)
     }
 
     let parsedArgs: { summary?: string; actions?: unknown[] } | null = null
@@ -199,10 +219,10 @@ export async function POST(request: Request) {
     }
 
     if (!parsedArgs) {
-      return jsonFallbackResponse(systemMessages, userMessages, context, lastUserText)
+      return jsonFallbackResponse(systemMessages, userMessages, context, lastUserText, ragHitCount)
     }
 
-    return proposalResponse(parsedArgs, context, result.assistantText)
+    return proposalResponse(parsedArgs, context, result.assistantText, ragHitCount)
   } catch (error) {
     console.error('AI chat failed:', error)
 
@@ -210,7 +230,7 @@ export async function POST(request: Request) {
     if (failedGeneration) {
       const salvaged = extractProposalPayload(failedGeneration)
       if (salvaged?.actions) {
-        return proposalResponse(salvaged, context)
+        return proposalResponse(salvaged, context, null, ragHitCount)
       }
     }
 
@@ -219,7 +239,13 @@ export async function POST(request: Request) {
     }
 
     try {
-      return await jsonFallbackResponse(systemMessages, userMessages, context, lastUserText)
+      return await jsonFallbackResponse(
+        systemMessages,
+        userMessages,
+        context,
+        lastUserText,
+        ragHitCount
+      )
     } catch (fallbackError) {
       console.error('AI JSON fallback failed:', fallbackError)
       return NextResponse.json(

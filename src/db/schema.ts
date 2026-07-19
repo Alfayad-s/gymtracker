@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, numeric, uniqueIndex, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, integer, boolean, numeric, uniqueIndex, index, vector } from 'drizzle-orm/pg-core'
 
 // 1. Profiles (user profile information, maps to Supabase auth user)
 export const profiles = pgTable('profiles', {
@@ -293,4 +293,29 @@ export const spotifyConnections = pgTable(
       .notNull(),
   },
   (t) => [uniqueIndex('spotify_connections_user_uidx').on(t.userId)]
+)
+
+// 18. AI RAG documents (personal memory + global fitness knowledge)
+export const aiDocuments = pgTable(
+  'ai_documents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => profiles.id, { onDelete: 'cascade' }),
+    sourceType: text('source_type').notNull(), // workout | meal | body_composition | exercise | knowledge | pr
+    sourceId: text('source_id'),
+    chunkIndex: integer('chunk_index').default(0).notNull(),
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    metadata: text('metadata'), // JSON string
+    embedding: vector('embedding', { dimensions: 1536 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    index('ai_documents_user_source_idx').on(t.userId, t.sourceType, t.sourceId),
+    index('ai_documents_source_type_idx').on(t.sourceType),
+  ]
 )
