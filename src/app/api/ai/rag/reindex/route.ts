@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { isEmbeddingsConfigured } from '@/lib/ai/embeddings'
 import { indexDocument, indexPlainDocument } from '@/lib/ai/rag'
 import {
   formatBodyCompositionChunk,
@@ -42,13 +41,6 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  if (!isEmbeddingsConfigured()) {
-    return NextResponse.json(
-      { error: 'OPENAI_API_KEY is not configured — RAG indexing disabled' },
-      { status: 503 }
-    )
-  }
-
   let body: ReindexBody
   try {
     body = (await request.json()) as ReindexBody
@@ -63,6 +55,7 @@ export async function POST(request: Request) {
       const dir = path.join(process.cwd(), 'content/fitness-knowledge')
       const files = (await readdir(dir)).filter((f) => f.endsWith('.md'))
       let indexed = 0
+      let embedded = 0
       for (const file of files) {
         const slug = file.replace(/\.md$/i, '')
         const raw = await readFile(path.join(dir, file), 'utf8')
@@ -77,8 +70,16 @@ export async function POST(request: Request) {
           metadata: { slug, kind: 'knowledge', file },
         })
         indexed += result.indexed
+        embedded += result.embedded
       }
-      return NextResponse.json({ ok: true, scope, indexed, files: files.length })
+      return NextResponse.json({
+        ok: true,
+        scope,
+        indexed,
+        embedded,
+        files: files.length,
+        mode: embedded > 0 ? 'vector+fts' : 'fts',
+      })
     }
 
     if (scope === 'me') {

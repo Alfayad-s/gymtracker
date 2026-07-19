@@ -1,7 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { aiDocuments } from '@/db/schema'
-import { embedTexts, embeddingToSql, isEmbeddingsConfigured } from '@/lib/ai/embeddings'
+import { embedTexts, embeddingToSql } from '@/lib/ai/embeddings'
 import { chunkText, type RagChunkInput, type RagSourceType } from './types'
 
 export async function deleteDocumentsForSource(params: {
@@ -34,17 +34,15 @@ export async function deleteDocumentsForSource(params: {
 }
 
 /**
- * Replace all chunks for a source with freshly embedded content.
- * No-ops when OPENAI_API_KEY is missing (RAG disabled).
+ * Replace all chunks for a source.
+ * Always stores text (FTS works without OpenAI). Embeddings are best-effort.
  */
 export async function indexDocument(params: {
   userId: string | null
   sourceType: RagSourceType
   sourceId: string
   chunks: RagChunkInput[]
-}): Promise<{ indexed: number }> {
-  if (!isEmbeddingsConfigured()) return { indexed: 0 }
-
+}): Promise<{ indexed: number; embedded: number }> {
   const prepared = params.chunks
     .map((c) => ({
       title: c.title.trim().slice(0, 200),
@@ -59,11 +57,14 @@ export async function indexDocument(params: {
     sourceId: params.sourceId,
   })
 
-  if (prepared.length === 0) return { indexed: 0 }
+  if (prepared.length === 0) return { indexed: 0, embedded: 0 }
 
-  // Expand long chunks
-  const expanded: Array<{ title: string; content: string; metadata: Record<string, unknown>; chunkIndex: number }> =
-    []
+  const expanded: Array<{
+    title: string
+    content: string
+    metadata: Record<string, unknown>
+    chunkIndex: number
+  }> = []
   let idx = 0
   for (const item of prepared) {
     const parts = chunkText(item.content)
@@ -78,12 +79,15 @@ export async function indexDocument(params: {
   }
 
   const embeddings = await embedTexts(expanded.map((e) => `${e.title}\n${e.content}`))
+  let embedded = 0
 
   for (let i = 0; i < expanded.length; i++) {
     const row = expanded[i]!
-    const embedding = embeddings[i]
-    if (!embedding) continue
-    const vectorSql = sql.raw(`'${embeddingToSql(embedding)}'::vector`)
+    const embedding = embeddings?.[i] ?? null
+    const embeddingSql = embedding
+      ? sql.raw(`'${embeddingToSql(embedding)}'::vector`)
+      : sql`null`
+    if (embedding) embedded += 1
 
     if (params.userId == null) {
       await db.execute(sql`
@@ -97,7 +101,7 @@ export async function indexDocument(params: {
           ${row.title},
           ${row.content},
           ${JSON.stringify(row.metadata)},
-          ${vectorSql}
+          ${embeddingSql}
         )
       `)
     } else {
@@ -112,13 +116,13 @@ export async function indexDocument(params: {
           ${row.title},
           ${row.content},
           ${JSON.stringify(row.metadata)},
-          ${vectorSql}
+          ${embeddingSql}
         )
       `)
     }
   }
 
-  return { indexed: expanded.length }
+  return { indexed: expanded.length, embedded }
 }
 
 export async function indexPlainDocument(params: {

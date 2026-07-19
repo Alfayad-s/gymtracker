@@ -169,7 +169,7 @@ function estimateHeightCm(
   const upright = shoulderTilt < 0.08 && hipTilt < 0.08 && torsoLean < 0.12
 
   const heightM = upright ? spanM * 0.55 + pathM * 0.45 : pathM * 0.7 + spanM * 0.3
-  let heightCm = Math.round(heightM * 100)
+  const heightCm = Math.round(heightM * 100)
 
   // Full-body framing check in image space (head near top, feet near bottom)
   let fullBody = true

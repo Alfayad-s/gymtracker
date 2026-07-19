@@ -78,28 +78,24 @@ export async function POST(request: Request) {
     }
 
     try {
-      const { indexDocument, formatBodyCompositionChunk, isEmbeddingsConfigured } = await import(
-        '@/lib/ai/rag'
-      )
-      if (isEmbeddingsConfigured()) {
-        const chunk = formatBodyCompositionChunk({
-          id: report.id,
-          reportDate: report.reportDate,
-          weight: report.weight,
-          bodyFatPercent: report.bodyFatPercent,
-          skeletalMuscleMass: report.skeletalMuscleMass,
-          bmi: report.bmi,
-          bodyScore: report.bodyScore,
-          visceralFat: report.visceralFat,
-          bmr: report.bmr,
-        })
-        void indexDocument({
-          userId: user.id,
-          sourceType: 'body_composition',
-          sourceId: report.id,
-          chunks: [chunk],
-        }).catch((err) => console.warn('RAG index body composition failed:', err))
-      }
+      const { indexDocument, formatBodyCompositionChunk } = await import('@/lib/ai/rag')
+      const chunk = formatBodyCompositionChunk({
+        id: report.id,
+        reportDate: report.reportDate,
+        weight: report.weight,
+        bodyFatPercent: report.bodyFatPercent,
+        skeletalMuscleMass: report.skeletalMuscleMass,
+        bmi: report.bmi,
+        bodyScore: report.bodyScore,
+        visceralFat: report.visceralFat,
+        bmr: report.bmr,
+      })
+      void indexDocument({
+        userId: user.id,
+        sourceType: 'body_composition',
+        sourceId: report.id,
+        chunks: [chunk],
+      }).catch((err) => console.warn('RAG index body composition failed:', err))
     } catch {
       // non-fatal
     }
