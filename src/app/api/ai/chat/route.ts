@@ -56,8 +56,12 @@ function buildContextBlock(context: AgentContext) {
   const hint = latestCustom
     ? `\nLatest custom exercise (for "that/this/it"): id=${latestCustom.id}, name="${latestCustom.name}".`
     : '\nNo custom exercises yet.'
+  const cal = lean.calendar
+  const planHint = lean.activePlanId
+    ? `\nActive plan: ${lean.activePlanId}. Calendar: today=${cal.todayName} (${cal.todayWeekday}), tomorrow=${cal.tomorrowName} (${cal.tomorrowWeekday}). For "create workout for tomorrow/Monday", propose add_plan_day + add_exercise_to_day using catalog ids and recovery.`
+    : `\nNo plans yet — create_plan first if the user wants a day workout. Calendar: today=${cal.todayName} (${cal.todayWeekday}), tomorrow=${cal.tomorrowName} (${cal.tomorrowWeekday}).`
 
-  return `GymTrack app snapshot (compact):${hint}\n${JSON.stringify(lean)}`
+  return `GymTrack app snapshot (compact):${hint}${planHint}\n${JSON.stringify(lean)}`
 }
 
 function friendlyAiError(error: unknown): string {

@@ -48,10 +48,19 @@ CREATE / UPDATE / DELETE → call propose_gymtrack_actions once.
 Bulk: one create_custom_exercise per listed exercise (max 40). Skip names already in exerciseCatalog or customExercises.
 Prefer catalog exercises for plans/workouts; only create customs for missing names.
 
+Plan days for a specific day ("tomorrow", "Monday", "create a workout for …"):
+- Use calendar.todayWeekday / calendar.tomorrowWeekday (1=Mon … 7=Sun). Never invent dates.
+- Use activePlanId (or plans[].id where isActive). Always pass planId and a non-empty name.
+- If that weekday already has a day on the active plan, reuse its dayId and add_exercise_to_day — do not add_plan_day again.
+- If no day exists: add_plan_day with name, muscleFocus, dayOfWeek, then add 4–8 catalog exercises via add_exercise_to_day with dayId "$last_day".
+- Build from CURRENT data: recovery (prefer recovered groups), recentHistory, profile.experienceLevel, and exerciseCatalog ids (never fake exerciseIds).
+- Default sets/reps: intermediate 3–4×8–12; beginner 3×10–12; advanced 4×6–10.
+
 Examples:
 {"summary":"Create Cable Fly","actions":[{"action":"create_custom_exercise","params":{"name":"Cable Fly","instructions":["Set cables","Bring handles together"]}}]}
 {"summary":"Update Cable Fly","actions":[{"action":"update_custom_exercise","params":{"name":"Cable Fly","instructions":["…"]}}]}
 {"summary":"Delete Cable Fly","actions":[{"action":"delete_custom_exercise","params":{"name":"Cable Fly"}}]}
+{"summary":"Add Push day for tomorrow","actions":[{"action":"add_plan_day","params":{"planId":"PLAN_ID","name":"Push — Tuesday","muscleFocus":"Chest Shoulders Triceps","dayOfWeek":2}},{"action":"add_exercise_to_day","params":{"planId":"PLAN_ID","dayId":"$last_day","exerciseId":"bench-press","targetSets":4,"targetReps":8}},{"action":"add_exercise_to_day","params":{"planId":"PLAN_ID","dayId":"$last_day","exerciseId":"overhead-press","targetSets":3,"targetReps":10}}]}
 
 Rules: never claim data changed until the user confirms; use IDs from context; "that/this/it" exercise = customExercises[0]; catalog is read-only; keep replies short; no medical diagnosis.
 
@@ -62,5 +71,5 @@ Formatting for READ answers (not tool calls):
 - Short one-liner answers can stay as plain prose`
 
 export const JSON_FALLBACK_PROMPT = `Tool call failed. For create/update/delete reply with ONLY JSON:
-{"summary":"...","actions":[{"action":"create_custom_exercise","params":{"name":"Cable Fly","instructions":["step 1"]}}]}
-One create_custom_exercise per name; skip library duplicates. For questions, reply in plain text.`
+{"summary":"...","actions":[{"action":"add_plan_day","params":{"planId":"…","name":"Push — Tuesday","dayOfWeek":2}},{"action":"add_exercise_to_day","params":{"planId":"…","dayId":"$last_day","exerciseId":"bench-press","targetSets":4,"targetReps":8}}]}
+Or create_custom_exercise per name; skip library duplicates. For questions, reply in plain text.`

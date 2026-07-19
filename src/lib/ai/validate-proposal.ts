@@ -11,6 +11,7 @@ import {
   type AgentContext,
   type AgentProposal,
 } from '@/lib/ai/agent-types'
+import { planDayLabel, resolveDayOfWeek } from '@/lib/ai/calendar'
 
 type RawProposalAction = {
   action?: unknown
@@ -22,11 +23,19 @@ type RawProposal = {
   actions?: unknown
 }
 
+const LAST_DAY_REF = '$last_day'
+const ACTIVE_PLAN_REF = '$active_plan'
+
+function activePlan(context: AgentContext) {
+  return context.plans.find((p) => p.isActive) ?? context.plans[0] ?? null
+}
+
 function hasPlan(context: AgentContext, planId: string) {
   return context.plans.some((p) => p.id === planId)
 }
 
 function hasDay(context: AgentContext, planId: string, dayId: string) {
+  if (dayId === LAST_DAY_REF) return true
   const plan = context.plans.find((p) => p.id === planId)
   return plan?.days.some((d) => d.id === dayId) ?? false
 }
@@ -43,7 +52,10 @@ function hasExerciseRow(
 }
 
 function hasCatalogExercise(context: AgentContext, exerciseId: string) {
-  return context.exerciseCatalog.some((e) => e.id === exerciseId)
+  return (
+    context.exerciseCatalog.some((e) => e.id === exerciseId) ||
+    context.customExercises.some((e) => e.id === exerciseId)
+  )
 }
 
 function hasCustomExercise(context: AgentContext, exerciseId: string) {
@@ -54,10 +66,113 @@ function hasActiveWorkoutExercise(context: AgentContext, exerciseId: string) {
   return context.activeWorkout?.exercises.some((e) => e.exerciseId === exerciseId) ?? false
 }
 
+function resolvePlanId(raw: unknown, context: AgentContext): string | undefined {
+  if (typeof raw === 'string' && raw.trim()) {
+    const id = raw.trim()
+    if (id === ACTIVE_PLAN_REF || id === 'active') {
+      return activePlan(context)?.id
+    }
+    return id
+  }
+  return activePlan(context)?.id
+}
+
+function resolveCatalogExerciseId(
+  context: AgentContext,
+  params: Record<string, unknown>
+): string | undefined {
+  const exerciseId =
+    typeof params.exerciseId === 'string' ? params.exerciseId.trim() : ''
+  if (exerciseId && hasCatalogExercise(context, exerciseId)) return exerciseId
+
+  const nameRaw =
+    (typeof params.exerciseName === 'string' && params.exerciseName.trim()) ||
+    (typeof params.name === 'string' && params.name.trim()) ||
+    ''
+  if (!nameRaw) return exerciseId || undefined
+
+  const name = nameRaw.toLowerCase()
+  const catalog = [...context.exerciseCatalog, ...context.customExercises]
+  const exact = catalog.find((e) => e.name.toLowerCase() === name)
+  if (exact) return exact.id
+  const partial = catalog.find(
+    (e) => e.name.toLowerCase().includes(name) || name.includes(e.name.toLowerCase())
+  )
+  return partial?.id ?? (exerciseId || undefined)
+}
+
+/** Fill missing plan-day fields from live app context before schema parse. */
+export function prefillActionParams(
+  action: AgentActionName,
+  params: unknown,
+  context: AgentContext,
+  opts?: { sawAddPlanDay?: boolean }
+): Record<string, unknown> {
+  const raw =
+    params && typeof params === 'object' && !Array.isArray(params)
+      ? { ...(params as Record<string, unknown>) }
+      : {}
+
+  const now = (() => {
+    const t = Date.parse(context.generatedAt)
+    return Number.isFinite(t) ? new Date(t) : new Date()
+  })()
+
+  if (
+    action === 'add_plan_day' ||
+    action === 'update_plan_day' ||
+    action === 'delete_plan_day' ||
+    action === 'add_exercise_to_day' ||
+    action === 'update_plan_exercise' ||
+    action === 'remove_plan_exercise' ||
+    action === 'update_plan' ||
+    action === 'delete_plan' ||
+    action === 'set_active_plan'
+  ) {
+    const planId = resolvePlanId(raw.planId, context)
+    if (planId) raw.planId = planId
+  }
+
+  if (action === 'add_plan_day' || action === 'update_plan_day') {
+    if (raw.dayOfWeek !== undefined) {
+      const resolved = resolveDayOfWeek(raw.dayOfWeek, now)
+      if (resolved !== undefined) raw.dayOfWeek = resolved
+    }
+
+    if (action === 'add_plan_day') {
+      const dayOfWeek = typeof raw.dayOfWeek === 'number' ? raw.dayOfWeek : undefined
+      const name = typeof raw.name === 'string' ? raw.name.trim() : ''
+      if (!name) {
+        const focus =
+          typeof raw.muscleFocus === 'string' && raw.muscleFocus.trim()
+            ? raw.muscleFocus.trim()
+            : 'Workout'
+        raw.name =
+          dayOfWeek != null ? `${focus} — ${planDayLabel(dayOfWeek)}` : focus
+      }
+    }
+  }
+
+  if (
+    action === 'add_exercise_to_day' ||
+    action === 'update_plan_exercise' ||
+    action === 'remove_plan_exercise'
+  ) {
+    if ((typeof raw.dayId !== 'string' || !raw.dayId.trim()) && opts?.sawAddPlanDay) {
+      raw.dayId = LAST_DAY_REF
+    }
+    const resolvedExercise = resolveCatalogExerciseId(context, raw)
+    if (resolvedExercise) raw.exerciseId = resolvedExercise
+  }
+
+  return raw
+}
+
 function validatePreconditions(
   action: AgentActionName,
   params: Record<string, unknown>,
-  context: AgentContext
+  context: AgentContext,
+  opts?: { sawAddPlanDay?: boolean }
 ): string | null {
   const planId = params.planId as string | undefined
   const dayId = params.dayId as string | undefined
@@ -98,7 +213,13 @@ function validatePreconditions(
 
     case 'add_exercise_to_day':
       if (!planId || !hasPlan(context, planId)) return `Plan not found: ${planId}`
-      if (!dayId || !hasDay(context, planId, dayId)) return `Day not found: ${dayId}`
+      if (dayId === LAST_DAY_REF) {
+        if (!opts?.sawAddPlanDay) {
+          return 'dayId "$last_day" requires a prior add_plan_day in this proposal'
+        }
+      } else if (!dayId || !hasDay(context, planId, dayId)) {
+        return `Day not found: ${dayId}`
+      }
       if (!exerciseId || !hasCatalogExercise(context, exerciseId))
         return `Exercise not in catalog: ${exerciseId}`
       return null
@@ -231,12 +352,16 @@ function defaultWorkoutName(context: AgentContext): string {
   const dayOfWeek = jsDay === 0 ? 7 : jsDay
   const today =
     active.days.find((d) => d.dayOfWeek === dayOfWeek) ??
-    active.days.find((d) => d.name.toLowerCase() === ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'][dayOfWeek - 1])
+    active.days.find(
+      (d) =>
+        d.name.toLowerCase() ===
+        ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'][
+          dayOfWeek - 1
+        ]
+    )
 
   if (today) {
-    return today.muscleFocus
-      ? `${today.name} — ${today.muscleFocus}`
-      : today.name
+    return today.muscleFocus ? `${today.name} — ${today.muscleFocus}` : today.name
   }
 
   return active.name || 'Workout'
@@ -325,6 +450,7 @@ export function validateRawProposal(
   const actions: AgentAction[] = []
   const skippedExisting: string[] = []
   const seenCreateNames: string[] = []
+  let sawAddPlanDay = false
 
   for (const item of raw.actions as RawProposalAction[]) {
     const actionName = item.action
@@ -332,7 +458,13 @@ export function validateRawProposal(
       return { ok: false, error: `Unknown or invalid action: ${String(actionName)}` }
     }
 
-    const parsed = parseActionParams(actionName as AgentActionName, item.params ?? {})
+    const prefilled = prefillActionParams(
+      actionName as AgentActionName,
+      item.params ?? {},
+      context,
+      { sawAddPlanDay }
+    )
+    const parsed = parseActionParams(actionName as AgentActionName, prefilled)
     if (!parsed.ok) return { ok: false, error: `${actionName}: ${parsed.error}` }
 
     const params = applyActionDefaults(
@@ -368,9 +500,12 @@ export function validateRawProposal(
     const precondition = validatePreconditions(
       actionName as AgentActionName,
       params,
-      context
+      context,
+      { sawAddPlanDay }
     )
     if (precondition) return { ok: false, error: `${actionName}: ${precondition}` }
+
+    if (actionName === 'add_plan_day') sawAddPlanDay = true
 
     actions.push({
       action: actionName as AgentActionName,

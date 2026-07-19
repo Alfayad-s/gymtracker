@@ -98,7 +98,7 @@ function tryParseJsonObject(text: string): Record<string, unknown> | null {
 }
 
 export function looksLikeMutationIntent(text: string): boolean {
-  return /\b(create|add|update|edit|delete|remove|change|set|start|finish|log|save|rename)\b/i.test(
+  return /\b(create|add|update|edit|delete|remove|change|set|start|finish|log|save|rename|build|schedule|plan)\b/i.test(
     text
   )
 }

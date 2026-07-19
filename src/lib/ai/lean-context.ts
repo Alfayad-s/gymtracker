@@ -1,12 +1,29 @@
 import type { AgentContext } from '@/lib/ai/agent-types'
+import { buildAgentCalendar } from '@/lib/ai/calendar'
 
 /**
  * Ultra-compact snapshot for the LLM (validation still uses the full context).
  * Keeps tokens under Groq free-tier TPM (~6k).
  */
 export function leanContextForModel(context: AgentContext) {
+  const generatedAt = Date.parse(context.generatedAt)
+  const calendar = buildAgentCalendar(
+    Number.isFinite(generatedAt) ? new Date(generatedAt) : new Date()
+  )
+  const activePlan =
+    context.plans.find((plan) => plan.isActive) ?? context.plans[0] ?? null
+
   return {
     generatedAt: context.generatedAt,
+    calendar: {
+      todayIso: calendar.todayIso,
+      todayWeekday: calendar.todayWeekday,
+      todayName: calendar.todayName,
+      tomorrowWeekday: calendar.tomorrowWeekday,
+      tomorrowName: calendar.tomorrowName,
+      dayOfWeek: '1=Mon … 7=Sun',
+    },
+    activePlanId: activePlan?.id ?? null,
     profile: context.profile,
     settings: context.settings,
     restTimer: context.restTimer,

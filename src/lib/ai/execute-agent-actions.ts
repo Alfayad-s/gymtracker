@@ -28,7 +28,32 @@ function num(value: unknown): number | undefined {
   return typeof value === 'number' && !Number.isNaN(value) ? value : undefined
 }
 
-function executeOne(action: AgentAction): { ok: boolean; message: string } {
+const LAST_DAY_REF = '$last_day'
+const ACTIVE_PLAN_REF = '$active_plan'
+
+type ExecuteRefs = {
+  lastDayId: string | null
+}
+
+function resolvePlanIdParam(raw: unknown): string {
+  const id = str(raw).trim()
+  if (!id || id === ACTIVE_PLAN_REF || id === 'active') {
+    const plans = usePlanStore.getState().plans
+    return plans.find((p) => p.isActive)?.id ?? plans[0]?.id ?? ''
+  }
+  return id
+}
+
+function resolveDayIdParam(raw: unknown, refs: ExecuteRefs): string {
+  const id = str(raw).trim()
+  if (id === LAST_DAY_REF) return refs.lastDayId ?? ''
+  return id
+}
+
+function executeOne(
+  action: AgentAction,
+  refs: ExecuteRefs
+): { ok: boolean; message: string } {
   const { action: name, params } = action
 
   try {
@@ -42,23 +67,23 @@ function executeOne(action: AgentAction): { ok: boolean; message: string } {
         return { ok: true, message: `Created plan (${id})` }
       }
       case 'update_plan': {
-        usePlanStore.getState().updatePlan(str(params.planId), {
+        usePlanStore.getState().updatePlan(resolvePlanIdParam(params.planId), {
           ...(params.name != null ? { name: str(params.name) } : {}),
           ...(params.description != null ? { description: str(params.description) } : {}),
         })
         return { ok: true, message: 'Plan updated' }
       }
       case 'delete_plan': {
-        usePlanStore.getState().deletePlan(str(params.planId))
+        usePlanStore.getState().deletePlan(resolvePlanIdParam(params.planId))
         return { ok: true, message: 'Plan deleted' }
       }
       case 'set_active_plan': {
-        usePlanStore.getState().setActivePlan(str(params.planId))
+        usePlanStore.getState().setActivePlan(resolvePlanIdParam(params.planId))
         return { ok: true, message: 'Active plan updated' }
       }
       case 'add_plan_day': {
         const dayId = usePlanStore.getState().addDay({
-          planId: str(params.planId),
+          planId: resolvePlanIdParam(params.planId),
           name: str(params.name),
           muscleFocus: str(params.muscleFocus),
           dayOfWeek:
@@ -66,18 +91,25 @@ function executeOne(action: AgentAction): { ok: boolean; message: string } {
               ? null
               : num(params.dayOfWeek) ?? null,
         })
+        refs.lastDayId = dayId
         return { ok: true, message: `Day added (${dayId})` }
       }
       case 'update_plan_day': {
-        usePlanStore.getState().updateDay(str(params.planId), str(params.dayId), {
-          ...(params.name != null ? { name: str(params.name) } : {}),
-          ...(params.muscleFocus != null ? { muscleFocus: str(params.muscleFocus) } : {}),
-          ...(params.dayOfWeek !== undefined ? { dayOfWeek: params.dayOfWeek as number | null } : {}),
-        })
+        usePlanStore
+          .getState()
+          .updateDay(resolvePlanIdParam(params.planId), resolveDayIdParam(params.dayId, refs), {
+            ...(params.name != null ? { name: str(params.name) } : {}),
+            ...(params.muscleFocus != null ? { muscleFocus: str(params.muscleFocus) } : {}),
+            ...(params.dayOfWeek !== undefined
+              ? { dayOfWeek: params.dayOfWeek as number | null }
+              : {}),
+          })
         return { ok: true, message: 'Day updated' }
       }
       case 'delete_plan_day': {
-        usePlanStore.getState().deleteDay(str(params.planId), str(params.dayId))
+        usePlanStore
+          .getState()
+          .deleteDay(resolvePlanIdParam(params.planId), resolveDayIdParam(params.dayId, refs))
         return { ok: true, message: 'Day deleted' }
       }
       case 'add_exercise_to_day': {
@@ -86,9 +118,11 @@ function executeOne(action: AgentAction): { ok: boolean; message: string } {
           useExerciseStore.getState().exercises
         )
         if (!exercise) return { ok: false, message: 'Exercise not found in catalog' }
+        const dayId = resolveDayIdParam(params.dayId, refs)
+        if (!dayId) return { ok: false, message: 'Day id missing (use $last_day after add_plan_day)' }
         const rowId = usePlanStore.getState().addExerciseToDay({
-          planId: str(params.planId),
-          dayId: str(params.dayId),
+          planId: resolvePlanIdParam(params.planId),
+          dayId,
           exerciseId: exercise.id,
           name: exercise.name,
           category: exercise.muscleGroup,
@@ -104,8 +138,8 @@ function executeOne(action: AgentAction): { ok: boolean; message: string } {
         usePlanStore
           .getState()
           .updateDayExercise(
-            str(params.planId),
-            str(params.dayId),
+            resolvePlanIdParam(params.planId),
+            resolveDayIdParam(params.dayId, refs),
             str(params.exerciseRowId),
             {
               ...(num(params.targetSets) != null ? { targetSets: num(params.targetSets) } : {}),
@@ -119,7 +153,11 @@ function executeOne(action: AgentAction): { ok: boolean; message: string } {
       case 'remove_plan_exercise': {
         usePlanStore
           .getState()
-          .removeDayExercise(str(params.planId), str(params.dayId), str(params.exerciseRowId))
+          .removeDayExercise(
+            resolvePlanIdParam(params.planId),
+            resolveDayIdParam(params.dayId, refs),
+            str(params.exerciseRowId)
+          )
         return { ok: true, message: 'Plan exercise removed' }
       }
       case 'start_workout': {
@@ -416,9 +454,10 @@ function executeOne(action: AgentAction): { ok: boolean; message: string } {
 
 export function executeAgentActions(actions: AgentAction[]): ExecuteResult {
   const results: ExecuteResult['results'] = []
+  const refs: ExecuteRefs = { lastDayId: null }
 
   for (const action of actions) {
-    const result = executeOne(action)
+    const result = executeOne(action, refs)
     results.push({ action: action.action, ...result })
     if (!result.ok) {
       return {

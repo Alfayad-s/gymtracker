@@ -260,6 +260,91 @@ describe('validateRawProposal', () => {
     if (!result.ok) assert.match(result.error, /Nothing new to create/i)
   })
 
+  it('fills active planId and name for add_plan_day when omitted', () => {
+    const generatedAt = '2026-07-19T12:00:00.000Z'
+    const result = validateRawProposal(
+      {
+        summary: 'Tomorrow push',
+        actions: [
+          {
+            action: 'add_plan_day',
+            params: { dayOfWeek: 'tomorrow', muscleFocus: 'Push' },
+          },
+        ],
+      },
+      mockContext({ generatedAt })
+    )
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      const action = result.proposal.actions[0]
+      assert.equal(action.action, 'add_plan_day')
+      assert.equal(action.params.planId, 'plan-1')
+      assert.equal(typeof action.params.dayOfWeek, 'number')
+      assert.ok((action.params.dayOfWeek as number) >= 1 && (action.params.dayOfWeek as number) <= 7)
+      assert.match(String(action.params.name), /Push/)
+    }
+  })
+
+  it('accepts add_exercise_to_day with $last_day after add_plan_day', () => {
+    const result = validateRawProposal(
+      {
+        summary: 'Build tomorrow day',
+        actions: [
+          {
+            action: 'add_plan_day',
+            params: {
+              planId: 'plan-1',
+              name: 'Push — Monday',
+              dayOfWeek: 1,
+              muscleFocus: 'Chest',
+            },
+          },
+          {
+            action: 'add_exercise_to_day',
+            params: {
+              planId: 'plan-1',
+              dayId: '$last_day',
+              exerciseId: 'bench-press',
+              targetSets: 4,
+              targetReps: 8,
+            },
+          },
+        ],
+      },
+      mockContext()
+    )
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.proposal.actions.length, 2)
+      assert.equal(result.proposal.actions[1].params.dayId, '$last_day')
+    }
+  })
+
+  it('resolves exercise name to catalog id for add_exercise_to_day', () => {
+    const result = validateRawProposal(
+      {
+        summary: 'Add bench',
+        actions: [
+          {
+            action: 'add_exercise_to_day',
+            params: {
+              planId: 'plan-1',
+              dayId: 'day-1',
+              name: 'Bench Press',
+              targetSets: 3,
+              targetReps: 10,
+            },
+          },
+        ],
+      },
+      mockContext()
+    )
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.proposal.actions[0].params.exerciseId, 'bench-press')
+    }
+  })
+
   it('matches similar exercise names', () => {
     assert.equal(exerciseNamesMatch('dumbell lateral raises', 'Dumbbell Lateral Raise'), true)
     assert.equal(exerciseNamesMatch('face pull', 'Face Pulls'), true)

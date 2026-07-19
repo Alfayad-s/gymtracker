@@ -178,6 +178,16 @@ export function coerceActionParams(
     else if (raw.name == null) delete raw.name
   }
 
+  if (action === 'add_plan_day' || action === 'update_plan_day') {
+    if (raw.dayOfWeek !== undefined && raw.dayOfWeek !== null) {
+      // Numbers stay; string weekdays / today / tomorrow resolved in prefill with calendar.
+      if (typeof raw.dayOfWeek === 'string') {
+        const n = Number(raw.dayOfWeek.trim())
+        if (Number.isFinite(n) && n >= 1 && n <= 7) raw.dayOfWeek = Math.round(n)
+      }
+    }
+  }
+
   return raw
 }
 
