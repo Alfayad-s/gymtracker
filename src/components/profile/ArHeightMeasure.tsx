@@ -108,10 +108,10 @@ function estimateHeightCm(
     LEFT_ANKLE,
     RIGHT_ANKLE,
   ]
-  if (!req.every((i) => visible(world[i], 0.45))) return null
+  if (!req.every((i) => visible(world[i], 0.35))) return null
 
   const headCandidates = [world[NOSE], world[LEFT_EAR], world[RIGHT_EAR], world[LEFT_EYE], world[RIGHT_EYE]].filter(
-    (p) => visible(p, 0.4)
+    (p) => visible(p, 0.3)
   )
   if (headCandidates.length === 0) return null
 
@@ -119,10 +119,10 @@ function estimateHeightCm(
   const headTop = headCandidates.reduce((best, p) => (p.y > best.y ? p : best))
 
   const leftFootPts = [world[LEFT_HEEL], world[LEFT_FOOT], world[LEFT_ANKLE]].filter((p) =>
-    visible(p, 0.4)
+    visible(p, 0.3)
   )
   const rightFootPts = [world[RIGHT_HEEL], world[RIGHT_FOOT], world[RIGHT_ANKLE]].filter((p) =>
-    visible(p, 0.4)
+    visible(p, 0.3)
   )
   if (leftFootPts.length === 0 || rightFootPts.length === 0) return null
 
@@ -171,25 +171,28 @@ function estimateHeightCm(
   const heightM = upright ? spanM * 0.55 + pathM * 0.45 : pathM * 0.7 + spanM * 0.3
   const heightCm = Math.round(heightM * 100)
 
-  // Full-body framing check in image space (head near top, feet near bottom)
+  // Full-body framing in image space (advisory — don't block lock when close)
   let fullBody = true
+  let frameSpan = 1
   if (image && image.length >= 33) {
     const imgHead = [image[NOSE], image[LEFT_EAR], image[RIGHT_EAR]].filter((p) =>
-      visible(p, 0.35)
+      visible(p, 0.3)
     )
     const imgFeet = [image[LEFT_HEEL], image[RIGHT_HEEL], image[LEFT_FOOT], image[RIGHT_FOOT]].filter(
-      (p) => visible(p, 0.35)
+      (p) => visible(p, 0.3)
     )
     if (imgHead.length && imgFeet.length) {
       const minY = Math.min(...imgHead.map((p) => p.y))
       const maxY = Math.max(...imgFeet.map((p) => p.y))
-      fullBody = minY < 0.18 && maxY > 0.82 && maxY - minY > 0.55
-      // Person too close / cropped → unreliable scale
-      if (maxY - minY < 0.5) return null
+      frameSpan = maxY - minY
+      // Soft guide: head in upper third, feet in lower third
+      fullBody = minY < 0.32 && maxY > 0.68 && frameSpan > 0.4
+      // Only reject when clearly cropped (missing head or feet in frame)
+      if (frameSpan < 0.32) return null
     }
   }
 
-  if (heightCm < 130 || heightCm > 220) return null
+  if (heightCm < 120 || heightCm > 230) return null
 
   // Visibility quality score
   const keyIdx = [
@@ -208,12 +211,13 @@ function estimateHeightCm(
   const visAvg =
     keyIdx.reduce((s, i) => s + (world[i]?.visibility ?? 0), 0) / keyIdx.length
   let quality = visAvg
-  if (upright) quality += 0.15
-  if (fullBody) quality += 0.15
+  if (upright) quality += 0.12
+  if (fullBody) quality += 0.12
+  if (frameSpan > 0.45) quality += 0.08
   quality = Math.min(1, quality)
 
-  // Reject low-quality frames
-  if (quality < 0.55 || !fullBody) return null
+  // Accept usable poses — framing is a hint, not a hard block
+  if (quality < 0.4) return null
 
   return { cm: heightCm, quality, upright, fullBody }
 }
@@ -224,12 +228,12 @@ function median(values: number[]): number {
   return sorted.length % 2 ? sorted[mid]! : Math.round((sorted[mid - 1]! + sorted[mid]!) / 2)
 }
 
-/** Trimmed mean — drop outliers beyond ±8 cm of median. */
+/** Trimmed mean — drop outliers beyond ±10 cm of median. */
 function stableAverage(values: number[]): number | null {
-  if (values.length < 5) return null
+  if (values.length < 4) return null
   const med = median(values)
-  const trimmed = values.filter((v) => Math.abs(v - med) <= 8)
-  if (trimmed.length < 4) return null
+  const trimmed = values.filter((v) => Math.abs(v - med) <= 10)
+  if (trimmed.length < 3) return null
   return Math.round(trimmed.reduce((a, b) => a + b, 0) / trimmed.length)
 }
 
@@ -472,23 +476,32 @@ export function ArHeightMeasure({ open, onOpenChange, onEstimate }: ArHeightMeas
 
           const estimate = world ? estimateHeightCm(world, landmarks ?? null) : null
           if (estimate) {
-            samplesRef.current = [...samplesRef.current.slice(-24), estimate.cm]
+            samplesRef.current = [...samplesRef.current.slice(-20), estimate.cm]
             const avg = stableAverage(samplesRef.current)
-            const std = sampleStdDev(samplesRef.current.slice(-12))
-            const locked = avg != null && samplesRef.current.length >= 12 && std < 3.5
+            const std = sampleStdDev(samplesRef.current.slice(-10))
+            // Ready to use sooner; "locked" when very stable
+            const ready = avg != null && samplesRef.current.length >= 6 && std < 6
+            const locked = avg != null && samplesRef.current.length >= 10 && std < 4
 
             if (avg != null) setLiveCm(avg)
-            setPoseReady(locked)
-            setStability(Math.min(100, Math.round((samplesRef.current.length / 12) * 100 * (locked ? 1 : 0.7))))
+            setPoseReady(ready)
+            setStability(
+              Math.min(
+                100,
+                Math.round((samplesRef.current.length / 10) * 100 * (locked ? 1 : ready ? 0.85 : 0.6))
+              )
+            )
 
             if (!estimate.upright) setHint('Stand straight — shoulders level')
-            else if (!estimate.fullBody) setHint('Step back — head and feet in frame')
+            else if (!estimate.fullBody) setHint('Almost — step back a bit if you can, or hold still')
             else if (!locked) setHint('Hold still… locking measurement')
-            else setHint('Locked — looking good')
+            else setHint('Locked — tap Use estimate')
           } else {
             setPoseReady(false)
-            setStability(0)
-            if (landmarks) setHint('Move so your full body fits the guide')
+            // Keep last liveCm briefly if we had samples; clear only when tracking lost
+            if (samplesRef.current.length === 0) setLiveCm(null)
+            setStability(Math.max(0, Math.round((samplesRef.current.length / 10) * 40)))
+            if (landmarks) setHint('Keep head and feet visible — hold still')
             else setHint('Stand fully inside the frame')
           }
         } catch {
@@ -582,7 +595,7 @@ export function ArHeightMeasure({ open, onOpenChange, onEstimate }: ArHeightMeas
               <div className="absolute top-3 left-3 right-3 flex items-start justify-between gap-2">
                 <div className="rounded-full bg-black/55 border border-white/10 px-3 py-1.5 text-[10px] font-bold text-white">
                   {poseReady && liveCm != null
-                    ? `Locked · ${liveCm} cm`
+                    ? `Ready · ${liveCm} cm`
                     : liveCm != null
                       ? `Tracking · ~${liveCm} cm`
                       : 'Align with guide'}
