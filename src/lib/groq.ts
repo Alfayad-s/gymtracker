@@ -308,15 +308,18 @@ export async function completeGroqTextChat(messages: GroqMessage[]) {
 }
 
 /** Vision / multimodal completion for meal photo analysis. */
-export async function completeGroqVisionChat(messages: GroqMessage[]) {
+export async function completeGroqVisionChat(
+  messages: GroqMessage[],
+  options?: { maxTokens?: number; temperature?: number }
+) {
   const model = process.env.GROQ_VISION_MODEL || DEFAULT_VISION_MODEL
 
   const result = await runGroqChat(messages, {
     toolChoice: 'none',
-    temperature: 0.2,
+    temperature: options?.temperature ?? 0.1,
     allowToolFallback: false,
     model,
-    maxTokens: 800,
+    maxTokens: options?.maxTokens ?? 2000,
     timeoutMs: 45_000,
     // Qwen 3.6 supports reasoning_effort=none for clean JSON (no thinking tokens).
     reasoningEffort: 'none',

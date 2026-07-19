@@ -6,8 +6,10 @@ import { ArrowLeft, Loader2, ScanLine, Sparkles } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useBodyCompositionStore } from '@/stores/bodyCompositionStore'
 import type { BodyCompositionExtract } from '@/lib/body-composition/types'
+import { normalizeReportDateIso } from '@/lib/body-composition/parse-date'
 import { computeDeltas } from '@/lib/body-composition/metrics'
 import { UploadZone } from '@/components/body-composition/UploadZone'
+import { ExtractReviewForm } from '@/components/body-composition/ExtractReviewForm'
 import { ReportDashboard } from '@/components/body-composition/ReportDashboard'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,7 +41,9 @@ export default function BodyCompositionPage() {
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<BodyCompositionExtract | null>(null)
   const [rawText, setRawText] = useState<string | null>(null)
+  const [lowConfidence, setLowConfidence] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     if (!user) return
@@ -50,7 +54,13 @@ export default function BodyCompositionPage() {
         reports?: typeof reports
         error?: string
       }
-      if (res.ok && data.reports) setReports(data.reports)
+      if (res.ok && data.reports) {
+        setReports(data.reports)
+        setSelectedId((prev) => {
+          if (prev && data.reports!.some((r) => r.id === prev)) return prev
+          return data.reports![0]?.id ?? null
+        })
+      }
     } finally {
       setLoadingList(false)
     }
@@ -60,7 +70,10 @@ export default function BodyCompositionPage() {
     void refresh()
   }, [refresh])
 
-  // Weekly / monthly local reminders
+  useEffect(() => {
+    if (!selectedId && reports[0]) setSelectedId(reports[0].id)
+  }, [reports, selectedId])
+
   useEffect(() => {
     if (!remindersEnabled || typeof window === 'undefined') return
     const now = Date.now()
@@ -100,6 +113,7 @@ export default function BodyCompositionPage() {
     setAnalyzing(true)
     setError(null)
     setDraft(null)
+    setLowConfidence(false)
     try {
       const res = await fetch('/api/body-composition/analyze', {
         method: 'POST',
@@ -110,10 +124,15 @@ export default function BodyCompositionPage() {
         report?: BodyCompositionExtract
         rawText?: string
         error?: string
+        lowConfidence?: boolean
       }
-      if (!res.ok || !data.report) throw new Error(data.error || 'Analyze failed')
-      setDraft(data.report)
+      if (!res.ok && !data.report) throw new Error(data.error || 'Analyze failed')
+      if (!data.report) throw new Error(data.error || 'Analyze failed')
+      const normalizedDate = normalizeReportDateIso(data.report.date) ?? data.report.date
+      setDraft({ ...data.report, date: normalizedDate })
       setRawText(data.rawText ?? null)
+      setLowConfidence(Boolean(data.lowConfidence))
+      if (data.error && res.ok) setError(data.error)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analyze failed')
     } finally {
@@ -144,6 +163,7 @@ export default function BodyCompositionPage() {
       if (!res.ok || !data.report) throw new Error(data.error || 'Save failed')
 
       upsertReport(data.report)
+      setSelectedId(data.report.id)
       void requestNotificationPermission().then(() => {
         notifyBodyComposition(
           'New report analyzed',
@@ -161,6 +181,7 @@ export default function BodyCompositionPage() {
       setDraft(null)
       setUploaded(null)
       setRawText(null)
+      setLowConfidence(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -170,7 +191,13 @@ export default function BodyCompositionPage() {
 
   const handleDelete = async (id: string) => {
     const res = await fetch(`/api/body-composition/reports/${id}`, { method: 'DELETE' })
-    if (res.ok) removeReport(id)
+    if (!res.ok) return
+    const remaining = reports.filter((r) => r.id !== id)
+    removeReport(id)
+    setSelectedId((prev) => {
+      if (prev !== id) return prev
+      return remaining[0]?.id ?? null
+    })
   }
 
   return (
@@ -230,6 +257,7 @@ export default function BodyCompositionPage() {
                 setUploaded(payload)
                 setDraft(null)
                 setError(null)
+                setLowConfidence(false)
               }}
             />
             {uploaded && (
@@ -252,29 +280,11 @@ export default function BodyCompositionPage() {
             {error && <p className="text-xs text-destructive">{error}</p>}
             {draft && (
               <div className="rounded-[20px] border border-primary/30 bg-primary/5 p-4 space-y-3">
-                <p className="text-xs font-bold text-foreground">Review extracted metrics</p>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  {(
-                    [
-                      ['Weight', draft.weight, 'kg'],
-                      ['Body Fat %', draft.bodyFatPercent, '%'],
-                      ['Muscle', draft.skeletalMuscleMass, 'kg'],
-                      ['BMI', draft.bmi, ''],
-                      ['Score', draft.bodyScore, ''],
-                      ['BMR', draft.bmr, 'kcal'],
-                    ] as const
-                  ).map(([label, value, unit]) => (
-                    <div
-                      key={label}
-                      className="rounded-[12px] bg-background/60 border border-border px-2.5 py-2"
-                    >
-                      <p className="text-muted-foreground">{label}</p>
-                      <p className="font-bold text-foreground tabular-nums">
-                        {value == null ? '—' : `${value}${unit ? ` ${unit}` : ''}`}
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                <ExtractReviewForm
+                  draft={draft}
+                  onChange={setDraft}
+                  lowConfidence={lowConfidence}
+                />
                 <Button
                   type="button"
                   disabled={saving}
@@ -297,12 +307,15 @@ export default function BodyCompositionPage() {
               <ScanLine className="w-8 h-8 text-muted-foreground mx-auto opacity-60" />
               <p className="text-sm font-bold text-foreground">Upload your first InBody report</p>
               <p className="text-xs text-muted-foreground">
-                Photos or PDFs work. AI will extract metrics automatically.
+                Photos or PDFs work. AI will extract metrics automatically — you can edit before
+                saving.
               </p>
             </div>
           ) : (
             <ReportDashboard
               reports={reports}
+              selectedId={selectedId ?? reports[0].id}
+              onSelect={setSelectedId}
               onDelete={(id) => void handleDelete(id)}
               onAnalysisSaved={(id, analysis) => {
                 const found = reports.find((r) => r.id === id)

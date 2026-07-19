@@ -75,19 +75,30 @@ export function toNum(value: unknown): number | null {
 export function chartSeries(
   reports: BodyCompositionReport[],
   key: keyof BodyCompositionReport
-): Array<{ date: string; value: number }> {
+): Array<{ date: string; label: string; value: number; fullDate: string }> {
   return [...reports]
     .sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime())
     .map((r) => {
       const value = toNum(r[key])
-      return value == null
-        ? null
-        : {
-            date: r.reportDate.slice(0, 10),
-            value,
-          }
+      if (value == null) return null
+      const d = new Date(r.reportDate)
+      const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0
+      const label = hasTime
+        ? d.toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      return {
+        date: label,
+        label,
+        fullDate: r.reportDate,
+        value,
+      }
     })
-    .filter(Boolean) as Array<{ date: string; value: number }>
+    .filter(Boolean) as Array<{ date: string; label: string; value: number; fullDate: string }>
 }
 
 export function formatMetric(value: number | null | undefined, suffix = '') {

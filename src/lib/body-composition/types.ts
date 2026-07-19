@@ -48,8 +48,9 @@ export type BodyCompositionReport = BodyCompositionExtract & {
   updatedAt: string
 }
 
-export const EXTRACT_JSON_PROMPT = `You extract InBody / BIA body composition report fields.
-Return ONLY valid JSON (no markdown, no prose) with this exact shape:
+export const EXTRACT_JSON_PROMPT = `You extract fields from InBody / BIA body composition reports (InBody 270, 370, 570, 770, Dial, H20, etc.).
+
+Return ONLY valid JSON (no markdown, no prose, no units inside numbers) with this exact shape:
 {
   "date": string | null,
   "height": number | null,
@@ -74,4 +75,46 @@ Return ONLY valid JSON (no markdown, no prose) with this exact shape:
   "segmentalLean": { "leftArm": number|null, "rightArm": number|null, "trunk": number|null, "leftLeg": number|null, "rightLeg": number|null } | null,
   "segmentalFat": { "leftArm": number|null, "rightArm": number|null, "trunk": number|null, "leftLeg": number|null, "rightLeg": number|null } | null
 }
-Use metric units (cm, kg, kcal). Missing values must be null. Numbers only — no units in values.`
+
+Label mapping (use these names → JSON keys):
+- Height / HT → height (cm)
+- Weight / WT → weight (kg)
+- InBody Score / Body Composition Score → bodyScore
+- BMI → bmi
+- PBF / Percent Body Fat / Body Fat % → bodyFatPercent
+- BFM / Body Fat Mass → bodyFatMass (kg)
+- SMM / Skeletal Muscle Mass → skeletalMuscleMass (kg)
+- FFM / Soft Lean Mass / Lean Body Mass / LBM → leanBodyMass (kg)
+- Protein → protein (kg)
+- Minerals / Bone Mineral Content → minerals (kg)
+- TBW / Total Body Water → totalBodyWater (L or kg as printed)
+- VFL / Visceral Fat Level / Visceral Fat Area → visceralFat (use the level number when both exist)
+- WHR / Waist-Hip Ratio → waistHipRatio
+- BMR / Basal Metabolic Rate → bmr (kcal)
+- Recommended Calorie Intake / Target Calorie → recommendedCalories
+- Target Weight → targetWeight
+- Weight Control / Fat Control / Muscle Control → weightControl / fatControl / muscleControl (keep sign: +/−)
+
+Segmental lean/fat (kg):
+- Left Arm / L-Arm / LA → leftArm
+- Right Arm / R-Arm / RA → rightArm
+- Trunk / TR → trunk
+- Left Leg / L-Leg / LL → leftLeg
+- Right Leg / R-Leg / RL → rightLeg
+
+Rules:
+1. Metric units only (cm, kg, kcal). Convert lb→kg (÷2.2046) and in→cm (×2.54) if needed.
+2. Missing values must be null — never invent numbers.
+3. Do not confuse Body Fat Mass (kg) with Percent Body Fat (%).
+4. Do not swap SMM with weight or lean mass.
+5. Prefer the measured/analysis values, not the normal range min/max.
+6. date MUST be the test / measurement date-time printed on the report (Test Date, Measured, ID / Date, Time), NOT today's upload date. Prefer ISO "YYYY-MM-DDTHH:mm:ss" when time is shown; otherwise "YYYY-MM-DD". Include time when the report prints it.`
+
+/** OCR transcription system prompt for vision models. */
+export const OCR_TRANSCRIBE_PROMPT = `You are a careful OCR engine for InBody / BIA body composition reports.
+
+Return plain text only (no markdown). Transcribe EVERY readable label and number exactly as printed.
+Preserve layout cues with newlines. Keep units next to values when shown (kg, %, cm, kcal).
+Include: test date and time, score, weight, height, BMI, PBF, BFM, SMM, FFM/LBM, TBW, protein, minerals, visceral fat, WHR, BMR, control values, and segmental lean/fat tables (arms, trunk, legs).
+Always capture the printed Test Date / Measured Date / Time line exactly (e.g. "2024.07.15 14:32").
+Do not invent missing values.`

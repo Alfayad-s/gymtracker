@@ -4,7 +4,10 @@ import { completeGroqTextChat, completeGroqVisionChat } from '@/lib/groq'
 import { extractDocumentText } from '@/lib/ocr/extract-text'
 import { bodyCompositionPreviewUrl } from '@/lib/cloudinary'
 import { EXTRACT_JSON_PROMPT } from '@/lib/body-composition/types'
-import { parseBodyCompositionJson } from '@/lib/body-composition/parse-report'
+import {
+  parseBodyCompositionJson,
+  scoreExtractCompleteness,
+} from '@/lib/body-composition/parse-report'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -47,48 +50,90 @@ export async function POST(request: Request) {
       buffer,
     })
 
-    let extracted = null as ReturnType<typeof parseBodyCompositionJson>
+    const preview = bodyCompositionPreviewUrl(fileUrl, kind)
+    const candidates: Array<{
+      extract: NonNullable<ReturnType<typeof parseBodyCompositionJson>>
+      source: string
+    }> = []
+
+    // Path A: OCR text → structured JSON
     if (rawText.length >= 40) {
-      const jsonRaw = await completeGroqTextChat([
-        { role: 'system', content: EXTRACT_JSON_PROMPT },
-        {
-          role: 'user',
-          content: `Extract body composition fields from this OCR text:\n\n${rawText.slice(0, 12000)}`,
-        },
-      ])
-      extracted = parseBodyCompositionJson(jsonRaw)
+      try {
+        const jsonRaw = await completeGroqTextChat([
+          { role: 'system', content: EXTRACT_JSON_PROMPT },
+          {
+            role: 'user',
+            content: `Extract body composition fields from this OCR text. Be precise — match labels to values carefully.\n\n${rawText.slice(0, 14000)}`,
+          },
+        ])
+        const extracted = parseBodyCompositionJson(jsonRaw)
+        if (extracted) candidates.push({ extract: extracted, source: 'text' })
+      } catch (err) {
+        console.warn('Text extract failed:', err)
+      }
     }
 
-    // Fallback: vision → JSON directly from preview image
-    if (!extracted) {
-      const preview = bodyCompositionPreviewUrl(fileUrl, kind)
-      const visionJson = await completeGroqVisionChat([
-        { role: 'system', content: EXTRACT_JSON_PROMPT },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Extract all body composition metrics from this InBody/BIA report image.',
-            },
-            { type: 'image_url', image_url: { url: preview } },
-          ],
-        },
-      ])
-      extracted = parseBodyCompositionJson(visionJson)
+    // Path B: vision → JSON directly from preview (more reliable for photos / bad PDF text)
+    try {
+      const visionJson = await completeGroqVisionChat(
+        [
+          { role: 'system', content: EXTRACT_JSON_PROMPT },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text:
+                  'Extract all body composition metrics from this InBody/BIA report image. Read labels carefully — do not confuse PBF (%) with BFM (kg), or SMM with weight.',
+              },
+              { type: 'image_url', image_url: { url: preview } },
+            ],
+          },
+        ],
+        { maxTokens: 2000, temperature: 0.1 }
+      )
+      const extracted = parseBodyCompositionJson(visionJson)
+      if (extracted) candidates.push({ extract: extracted, source: 'vision' })
+    } catch (err) {
+      console.warn('Vision extract failed:', err)
     }
 
-    if (!extracted) {
+    if (candidates.length === 0) {
       return NextResponse.json(
-        { error: 'Could not extract metrics from this report. Try a clearer photo or PDF.' },
+        {
+          error:
+            'Could not extract metrics from this report. Try a clearer photo of the full InBody page, or a higher-quality PDF.',
+          rawText,
+          method,
+        },
         { status: 422 }
       )
     }
 
+    // Prefer the more complete extract (vision often wins on photos)
+    candidates.sort(
+      (a, b) => scoreExtractCompleteness(b.extract) - scoreExtractCompleteness(a.extract)
+    )
+    const best = candidates[0]
+
+    if (scoreExtractCompleteness(best.extract) < 4) {
+      return NextResponse.json(
+        {
+          error:
+            'Extraction looked incomplete. Check the preview below, fix any wrong values, or re-upload a clearer scan.',
+          report: best.extract,
+          rawText,
+          method: `${method}+${best.source}`,
+          lowConfidence: true,
+        },
+        { status: 200 }
+      )
+    }
+
     return NextResponse.json({
-      report: extracted,
+      report: best.extract,
       rawText,
-      method,
+      method: `${method}+${best.source}`,
     })
   } catch (error) {
     console.error('Body composition analyze failed:', error)

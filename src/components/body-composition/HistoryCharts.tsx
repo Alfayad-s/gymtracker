@@ -42,7 +42,7 @@ function ChartCard({
   color,
 }: {
   label: string
-  data: Array<{ date: string; value: number }>
+  data: Array<{ date: string; value: number; fullDate?: string }>
   color: string
 }) {
   return (
@@ -62,7 +62,8 @@ function ChartCard({
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 9, fill: 'var(--chart-axis, hsl(var(--muted-foreground)))' }}
-                tickFormatter={(v) => String(v).slice(5)}
+                interval="preserveStartEnd"
+                minTickGap={28}
               />
               <YAxis
                 width={32}
@@ -75,6 +76,17 @@ function ChartCard({
                   border: '1px solid var(--border)',
                   borderRadius: 12,
                   fontSize: 11,
+                }}
+                labelFormatter={(_, payload) => {
+                  const full = payload?.[0]?.payload?.fullDate as string | undefined
+                  if (!full) return ''
+                  return new Date(full).toLocaleString(undefined, {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
                 }}
               />
               <Line

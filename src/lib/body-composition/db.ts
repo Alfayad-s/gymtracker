@@ -5,6 +5,7 @@ import { db } from '@/db'
 import { bodyCompositionReports } from '@/db/schema'
 import type { BodyCompositionExtract, BodyCompositionReport } from './types'
 import { emptySegmental } from './metrics'
+import { parseInBodyDateTime } from './parse-date'
 
 function numStr(value: number | null | undefined): string | null {
   if (value == null || Number.isNaN(value)) return null
@@ -88,7 +89,8 @@ export async function insertReport(params: {
   rawText?: string | null
 }) {
   const { extract } = params
-  const reportDate = extract.date ? new Date(extract.date) : new Date()
+  // Prefer the test date/time printed on the InBody report — drives history & charts
+  const reportDate = parseInBodyDateTime(extract.date) ?? new Date()
   const safeDate = Number.isNaN(reportDate.getTime()) ? new Date() : reportDate
 
   const [row] = await db

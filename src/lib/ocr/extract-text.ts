@@ -2,6 +2,8 @@ import 'server-only'
 
 import { completeGroqVisionChat } from '@/lib/groq'
 import { bodyCompositionPreviewUrl } from '@/lib/cloudinary'
+import { OCR_TRANSCRIBE_PROMPT } from '@/lib/body-composition/types'
+import { looksLikeInBodyText } from '@/lib/body-composition/parse-report'
 
 /**
  * Lightweight PDF text-layer extraction (no pdfjs).
@@ -11,11 +13,11 @@ export function extractPdfTextLayer(buffer: Buffer): string {
   const raw = buffer.toString('latin1')
   const chunks: string[] = []
 
-  // (...) string literals
   const literalRe = /\((?:\\.|[^\\)])+\)/g
   let match: RegExpExecArray | null
   while ((match = literalRe.exec(raw)) != null) {
-    const inner = match[0].slice(1, -1)
+    const inner = match[0]
+      .slice(1, -1)
       .replace(/\\n/g, ' ')
       .replace(/\\r/g, ' ')
       .replace(/\\t/g, ' ')
@@ -28,7 +30,6 @@ export function extractPdfTextLayer(buffer: Buffer): string {
     }
   }
 
-  // Hex strings <...>
   const hexRe = /<([0-9A-Fa-f\s]+)>/g
   while ((match = hexRe.exec(raw)) != null) {
     const hex = match[1].replace(/\s/g, '')
@@ -48,23 +49,25 @@ export function extractPdfTextLayer(buffer: Buffer): string {
 }
 
 export async function visionTranscribeImage(imageUrl: string): Promise<string> {
-  return completeGroqVisionChat([
-    {
-      role: 'system',
-      content:
-        'You are an OCR transcription engine for InBody/BIA body composition reports. Return plain text only — every readable number and label. No markdown.',
-    },
-    {
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: 'Transcribe all readable text from this body composition report image.',
-        },
-        { type: 'image_url', image_url: { url: imageUrl } },
-      ],
-    },
-  ])
+  return completeGroqVisionChat(
+    [
+      {
+        role: 'system',
+        content: OCR_TRANSCRIBE_PROMPT,
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'Transcribe this InBody / BIA report image completely. List every label with its number.',
+          },
+          { type: 'image_url', image_url: { url: imageUrl } },
+        ],
+      },
+    ],
+    { maxTokens: 2500 }
+  )
 }
 
 export type ExtractTextResult = {
@@ -77,9 +80,11 @@ export async function extractDocumentText(params: {
   kind: 'image' | 'pdf'
   buffer?: Buffer
 }): Promise<ExtractTextResult> {
+  // Only trust PDF text-layer when it looks like a real InBody report.
+  // Compressed/CID PDFs often yield garbage that misleads extraction.
   if (params.kind === 'pdf' && params.buffer) {
     const layer = extractPdfTextLayer(params.buffer)
-    if (layer.length >= 80) {
+    if (looksLikeInBodyText(layer)) {
       return { rawText: layer, method: 'pdf-text' }
     }
   }
