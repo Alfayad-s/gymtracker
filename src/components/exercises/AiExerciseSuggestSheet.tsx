@@ -14,11 +14,8 @@ type AiExerciseSuggestSheetProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onApply: (suggestion: CreateExerciseInput) => void
-  /** Catalog + custom exercises for duplicate detection. */
   existingExercises?: ExistingExercise[]
-  /** When true, confirm button says "Create exercise" (library quick-create). */
   createMode?: boolean
-  /** Prefill the name field when opening (e.g. from library search). */
   initialName?: string
 }
 
@@ -115,10 +112,10 @@ export function AiExerciseSuggestSheet({
     <Drawer.Root open={open} onOpenChange={handleOpenChange}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-[2px]" />
-        <Drawer.Content className="fixed bottom-0 left-0 right-0 z-[70] mx-auto flex max-h-[88dvh] w-full flex-col rounded-t-[28px] border border-border bg-background outline-none sm:max-w-[430px]">
+        <Drawer.Content className="fixed bottom-0 left-0 right-0 z-[70] mx-auto flex h-[92dvh] max-h-[96dvh] w-full flex-col rounded-t-[28px] border border-border bg-background outline-none sm:max-w-[430px]">
           <div className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-muted" />
 
-          <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
+          <div className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-border/50">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 border border-primary/25">
                 <Bot className="h-4 w-4 text-primary" />
@@ -142,9 +139,9 @@ export function AiExerciseSuggestSheet({
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] space-y-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
             {!suggestion && !existingMatch ? (
-              <>
+              <div className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     Exercise name
@@ -170,66 +167,21 @@ export function AiExerciseSuggestSheet({
                     <p className="text-xs text-destructive">{error}</p>
                   </div>
                 )}
-
-                <Button
-                  type="button"
-                  disabled={!name.trim() || isLoading}
-                  onClick={() => void handleGenerate()}
-                  className="w-full h-12 rounded-[16px] bg-primary text-primary-foreground font-bold border-0 gap-2 disabled:opacity-50"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Generating…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-4 w-4" />
-                      {createMode ? 'Check & fill with AI' : 'Fill with AI'}
-                    </>
-                  )}
-                </Button>
-              </>
+              </div>
             ) : existingMatch ? (
-              <>
-                <div className="rounded-[20px] border border-primary/25 bg-primary/5 p-4 space-y-3">
-                  <div className="flex items-start gap-2.5">
-                    <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-bold text-foreground">
-                        Already in your library
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        “{existingMatch.name}” is already available — no need to create it again.
-                      </p>
-                    </div>
+              <div className="rounded-[20px] border border-primary/25 bg-primary/5 p-4 space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Already in your library</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      “{existingMatch.name}” is already available — no need to create it again.
+                    </p>
                   </div>
                 </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      setExistingMatch(null)
-                      setError(null)
-                    }}
-                    className="flex-1 h-12 rounded-[16px] bg-muted text-foreground border-0"
-                  >
-                    Try another name
-                  </Button>
-                  {existingMatch.id ? (
-                    <Link
-                      href={`/exercises/${existingMatch.id}`}
-                      onClick={() => handleOpenChange(false)}
-                      className="flex-1 h-12 rounded-[16px] bg-primary text-primary-foreground font-bold flex items-center justify-center"
-                    >
-                      Open exercise
-                    </Link>
-                  ) : null}
-                </div>
-              </>
+              </div>
             ) : suggestion ? (
-              <>
+              <div className="space-y-4">
                 <div className="rounded-[20px] border border-primary/25 bg-primary/5 p-4 space-y-3">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-primary">
                     Suggested details
@@ -268,27 +220,72 @@ export function AiExerciseSuggestSheet({
                     ? 'Confirm to add this exercise to your library.'
                     : 'Confirm to fill the form. You can edit anything before creating.'}
                 </p>
+              </div>
+            ) : null}
+          </div>
 
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      setSuggestion(null)
-                      setError(null)
-                    }}
-                    className="flex-1 h-12 rounded-[16px] bg-muted text-foreground border-0"
+          <div className="shrink-0 border-t border-border/50 bg-background px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            {!suggestion && !existingMatch ? (
+              <Button
+                type="button"
+                disabled={!name.trim() || isLoading}
+                onClick={() => void handleGenerate()}
+                className="w-full h-12 rounded-[16px] bg-primary text-primary-foreground font-bold border-0 gap-2 disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    {createMode ? 'Check & fill with AI' : 'Fill with AI'}
+                  </>
+                )}
+              </Button>
+            ) : existingMatch ? (
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setExistingMatch(null)
+                    setError(null)
+                  }}
+                  className="flex-1 h-12 rounded-[16px] bg-muted text-foreground border-0"
+                >
+                  Try another name
+                </Button>
+                {existingMatch.id ? (
+                  <Link
+                    href={`/exercises/${existingMatch.id}`}
+                    onClick={() => handleOpenChange(false)}
+                    className="flex-1 h-12 rounded-[16px] bg-primary text-primary-foreground font-bold flex items-center justify-center"
                   >
-                    Back
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleConfirm}
-                    className="flex-1 h-12 rounded-[16px] bg-primary text-primary-foreground font-bold border-0"
-                  >
-                    {createMode ? 'Create exercise' : 'Use these details'}
-                  </Button>
-                </div>
-              </>
+                    Open exercise
+                  </Link>
+                ) : null}
+              </div>
+            ) : suggestion ? (
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setSuggestion(null)
+                    setError(null)
+                  }}
+                  className="flex-1 h-12 rounded-[16px] bg-muted text-foreground border-0"
+                >
+                  Back
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleConfirm}
+                  className="flex-1 h-12 rounded-[16px] bg-primary text-primary-foreground font-bold border-0"
+                >
+                  {createMode ? 'Create exercise' : 'Use these details'}
+                </Button>
+              </div>
             ) : null}
           </div>
         </Drawer.Content>

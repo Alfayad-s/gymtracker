@@ -17,6 +17,7 @@ import { recoveryGroupsForExercise, type RecoveryGroup } from '@/lib/muscle-reco
 import { WeightPicker } from '@/components/workout/WeightPicker'
 import { RepPicker } from '@/components/workout/RepPicker'
 import { WorkoutRestCircle } from '@/components/workout/WorkoutRestCircle'
+import { WorkoutExerciseMediaBackdrop } from '@/components/workout/WorkoutExerciseMediaBackdrop'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import { requestNotificationPermission, unlockRestSound } from '@/lib/notifications'
 import { Dumbbell, Plus, Check, Timer, Play, Flag, ChevronRight, SkipForward, ListOrdered } from 'lucide-react'
@@ -127,6 +128,18 @@ export default function WorkoutPage() {
   }, [activeSession, currentSet])
 
   const nextExerciseName = upcomingExercises[0]?.name ?? null
+
+  const restNextExercise = useMemo(() => {
+    if (!activeSession || !currentSet) return null
+    const ctx = getSetContext(activeSession, currentSet.exerciseId, currentSet.setIndex)
+    if (!ctx) return null
+    return {
+      exerciseId: ctx.exercise.exerciseId,
+      name: ctx.exercise.name,
+      equipment: ctx.exercise.equipment,
+      setLabel: `Set ${ctx.set.setNumber} of ${ctx.setCount}`,
+    }
+  }, [activeSession, currentSet])
 
   const handleSkipExercise = () => {
     if (!currentSet) return
@@ -331,9 +344,12 @@ export default function WorkoutPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen pb-6">
+    <div className="relative flex flex-col min-h-screen pb-6 overflow-hidden">
+      <WorkoutExerciseMediaBackdrop exerciseId={setContext?.exercise.exerciseId} />
+
+      <div className="relative z-10 flex flex-col min-h-screen pb-6">
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur-md border-b border-border px-5 py-3.5 z-30">
+      <div className="sticky top-0 bg-background/80 backdrop-blur-md border-b border-border px-5 py-3.5 z-30">
         <div className="flex justify-between items-start gap-3">
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-foreground tracking-tight truncate">
@@ -391,7 +407,7 @@ export default function WorkoutPage() {
             </Button>
           </div>
         ) : isResting ? (
-          <WorkoutRestCircle />
+          <WorkoutRestCircle nextExercise={restNextExercise} />
         ) : allSetsComplete ? (
           <div className="flex flex-col items-center justify-center flex-1 text-center px-4">
             <div className="w-20 h-20 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center mb-5">
@@ -654,6 +670,7 @@ export default function WorkoutPage() {
           </div>,
           document.body
         )}
+      </div>
     </div>
   )
 }

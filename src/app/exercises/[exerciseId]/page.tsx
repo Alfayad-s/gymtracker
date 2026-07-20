@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { ArrowLeft, Dumbbell, Pencil, Trash2 } from 'lucide-react'
 import { getExerciseById, toLegacyExercise } from '@/data/exercises'
+import { ExerciseVideoPreview } from '@/components/exercises/ExerciseVideoPreview'
 import { MuscleFocusPreview } from '@/components/muscle-map'
 import { useWorkoutStore } from '@/stores/workoutStore'
 import { useExerciseStore } from '@/stores/exerciseStore'
@@ -205,13 +206,10 @@ export default function ExerciseDetailPage() {
             <h2 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
               Demo video
             </h2>
-            <div className="rounded-[20px] overflow-hidden border border-border bg-black aspect-video">
-              <video
-                src={exercise.videoUrl}
-                controls
-                playsInline
-                preload="metadata"
-                className="w-full h-full object-contain"
+            <div className="rounded-[20px] overflow-hidden border border-border aspect-video">
+              <ExerciseVideoPreview
+                url={exercise.videoUrl}
+                title={`${exercise.name} demo`}
               />
             </div>
           </div>

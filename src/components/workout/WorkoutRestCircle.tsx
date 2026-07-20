@@ -3,9 +3,21 @@
 import { Pause, Play, SkipForward, Plus, Minus } from 'lucide-react'
 import { useTimerStore } from '@/stores/timerStore'
 import { formatRestTime } from '@/components/workout/RestTimer'
+import { WorkoutNextExercisePreview } from '@/components/workout/WorkoutNextExercisePreview'
+
+type RestNextExercise = {
+  exerciseId: string
+  name: string
+  equipment?: string
+  setLabel: string
+}
+
+type WorkoutRestCircleProps = {
+  nextExercise?: RestNextExercise | null
+}
 
 /** Large centered circular rest timer for the active workout page. */
-export function WorkoutRestCircle() {
+export function WorkoutRestCircle({ nextExercise }: WorkoutRestCircleProps) {
   const {
     secondsRemaining,
     duration,
@@ -123,6 +135,15 @@ export function WorkoutRestCircle() {
           </>
         )}
       </div>
+
+      {nextExercise && (
+        <WorkoutNextExercisePreview
+          exerciseId={nextExercise.exerciseId}
+          name={nextExercise.name}
+          equipment={nextExercise.equipment}
+          setLabel={nextExercise.setLabel}
+        />
+      )}
 
       <button
         type="button"
