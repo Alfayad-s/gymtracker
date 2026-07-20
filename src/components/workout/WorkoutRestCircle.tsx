@@ -14,10 +14,11 @@ type RestNextExercise = {
 
 type WorkoutRestCircleProps = {
   nextExercise?: RestNextExercise | null
+  onViewDemo?: () => void
 }
 
 /** Large centered circular rest timer for the active workout page. */
-export function WorkoutRestCircle({ nextExercise }: WorkoutRestCircleProps) {
+export function WorkoutRestCircle({ nextExercise, onViewDemo }: WorkoutRestCircleProps) {
   const {
     secondsRemaining,
     duration,
@@ -143,6 +144,17 @@ export function WorkoutRestCircle({ nextExercise }: WorkoutRestCircleProps) {
           equipment={nextExercise.equipment}
           setLabel={nextExercise.setLabel}
         />
+      )}
+
+      {onViewDemo && (
+        <button
+          type="button"
+          onClick={onViewDemo}
+          className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-card/90 px-4 py-2 text-sm font-semibold text-foreground backdrop-blur-sm active:scale-[0.98] transition-all"
+        >
+          <Play className="w-4 h-4 text-primary fill-primary/20" />
+          View demo video
+        </button>
       )}
 
       <button

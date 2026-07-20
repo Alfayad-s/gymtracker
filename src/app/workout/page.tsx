@@ -18,11 +18,15 @@ import { WeightPicker } from '@/components/workout/WeightPicker'
 import { RepPicker } from '@/components/workout/RepPicker'
 import { WorkoutRestCircle } from '@/components/workout/WorkoutRestCircle'
 import { WorkoutExerciseMediaBackdrop } from '@/components/workout/WorkoutExerciseMediaBackdrop'
+import { WorkoutExerciseDemoSheet } from '@/components/workout/WorkoutExerciseDemoSheet'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import { requestNotificationPermission, unlockRestSound } from '@/lib/notifications'
 import { Dumbbell, Plus, Check, Timer, Play, Flag, ChevronRight, SkipForward, ListOrdered } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SpotifyMiniPlayer } from '@/components/spotify/spotify-mini-player'
+import { getExerciseById } from '@/data/exercises'
+import { hasExerciseVideoPreview } from '@/components/exercises/ExerciseVideoPreview'
+import { useExerciseStore } from '@/stores/exerciseStore'
 
 function formatElapsed(ms: number) {
   const totalSec = Math.floor(ms / 1000)
@@ -64,8 +68,10 @@ export default function WorkoutPage() {
   const [showFinish, setShowFinish] = useState(false)
   const [showCancel, setShowCancel] = useState(false)
   const [showUpNext, setShowUpNext] = useState(false)
+  const [demoVideoOpen, setDemoVideoOpen] = useState(false)
   const [summary, setSummary] = useState<ReturnType<typeof finishWorkout> | null>(null)
   const [portalReady, setPortalReady] = useState(false)
+  const customExercises = useExerciseStore((s) => s.exercises)
 
   // Keep screen on during an active workout (supported browsers)
   useWakeLock(Boolean(activeSession) && !summary)
@@ -140,6 +146,19 @@ export default function WorkoutPage() {
       setLabel: `Set ${ctx.set.setNumber} of ${ctx.setCount}`,
     }
   }, [activeSession, currentSet])
+
+  const currentExerciseVideoUrl = useMemo(() => {
+    const exerciseId = setContext?.exercise.exerciseId
+    if (!exerciseId) return null
+    const exercise = getExerciseById(exerciseId, customExercises)
+    const videoUrl = exercise?.videoUrl?.trim()
+    if (!videoUrl || !hasExerciseVideoPreview(videoUrl)) return null
+    return videoUrl
+  }, [setContext?.exercise.exerciseId, customExercises])
+
+  useEffect(() => {
+    setDemoVideoOpen(false)
+  }, [setContext?.exercise.exerciseId])
 
   const handleSkipExercise = () => {
     if (!currentSet) return
@@ -345,7 +364,10 @@ export default function WorkoutPage() {
 
   return (
     <div className="relative flex flex-col min-h-screen pb-6 overflow-hidden">
-      <WorkoutExerciseMediaBackdrop exerciseId={setContext?.exercise.exerciseId} />
+      <WorkoutExerciseMediaBackdrop
+        exerciseId={setContext?.exercise.exerciseId}
+        active={!demoVideoOpen}
+      />
 
       <div className="relative z-10 flex flex-col min-h-screen pb-6">
       {/* Header */}
@@ -407,7 +429,10 @@ export default function WorkoutPage() {
             </Button>
           </div>
         ) : isResting ? (
-          <WorkoutRestCircle nextExercise={restNextExercise} />
+          <WorkoutRestCircle
+            nextExercise={restNextExercise}
+            onViewDemo={currentExerciseVideoUrl ? () => setDemoVideoOpen(true) : undefined}
+          />
         ) : allSetsComplete ? (
           <div className="flex flex-col items-center justify-center flex-1 text-center px-4">
             <div className="w-20 h-20 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center mb-5">
@@ -476,6 +501,17 @@ export default function WorkoutPage() {
                   Target {setContext.exercise.targetReps} reps · Rest{' '}
                   {setContext.exercise.restSeconds ?? 90}s after set
                 </p>
+              )}
+
+              {currentExerciseVideoUrl && (
+                <button
+                  type="button"
+                  onClick={() => setDemoVideoOpen(true)}
+                  className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-card/90 px-4 py-2 text-sm font-semibold text-foreground backdrop-blur-sm active:scale-[0.98] transition-all"
+                >
+                  <Play className="w-4 h-4 text-primary fill-primary/20" />
+                  View demo video
+                </button>
               )}
 
               {nextExerciseName && (
@@ -671,6 +707,15 @@ export default function WorkoutPage() {
           document.body
         )}
       </div>
+
+      {currentExerciseVideoUrl && setContext && (
+        <WorkoutExerciseDemoSheet
+          open={demoVideoOpen}
+          onOpenChange={setDemoVideoOpen}
+          exerciseName={setContext.exercise.name}
+          videoUrl={currentExerciseVideoUrl}
+        />
+      )}
     </div>
   )
 }

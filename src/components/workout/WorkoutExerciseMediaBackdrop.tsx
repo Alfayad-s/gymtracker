@@ -8,6 +8,8 @@ import { useExerciseStore } from '@/stores/exerciseStore'
 
 type WorkoutExerciseMediaBackdropProps = {
   exerciseId?: string | null
+  /** When false, backdrop is hidden (e.g. while demo sheet is open). */
+  active?: boolean
 }
 
 function hasShowableImage(imageUrl: string | undefined): boolean {
@@ -17,6 +19,7 @@ function hasShowableImage(imageUrl: string | undefined): boolean {
 
 export function WorkoutExerciseMediaBackdrop({
   exerciseId,
+  active = true,
 }: WorkoutExerciseMediaBackdropProps) {
   const customExercises = useExerciseStore((s) => s.exercises)
 
@@ -34,7 +37,7 @@ export function WorkoutExerciseMediaBackdrop({
     return null
   }, [exerciseId, customExercises])
 
-  if (!media) return null
+  if (!active || !media) return null
 
   return (
     <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
