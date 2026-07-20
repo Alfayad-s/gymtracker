@@ -67,7 +67,7 @@ export function AiExerciseSuggestSheet({
   const [existingMatch, setExistingMatch] = useState<{ id?: string; name: string } | null>(
     null
   )
-  const [snapPoint, setSnapPoint] = useState<number | string>(SNAP_COMPACT)
+  const [snapPoint, setSnapPoint] = useState<number | string | null>(SNAP_COMPACT)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const keyboardInset = useKeyboardInset(open)
 
