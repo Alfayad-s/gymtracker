@@ -169,14 +169,11 @@ Be specific to the exercise name. Keep instructions mobile-friendly.`
     return NextResponse.json({ suggestion })
   } catch (error) {
     console.error('Suggest exercise failed:', error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'AI is unavailable right now. Please try again.',
-      },
-      { status: 503 }
-    )
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'AI is unavailable right now. Please try again.'
+    const status = /rate limit|too many requests|429|tpm/i.test(message) ? 429 : 503
+    return NextResponse.json({ error: message }, { status })
   }
 }

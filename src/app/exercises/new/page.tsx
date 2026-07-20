@@ -7,10 +7,12 @@ import { AiExerciseSuggestSheet } from '@/components/exercises/AiExerciseSuggest
 import { ExerciseForm } from '@/components/exercises/ExerciseForm'
 import type { CreateExerciseInput } from '@/data/exercises'
 import { useExerciseStore } from '@/stores/exerciseStore'
+import { useMergedExercises } from '@/hooks/useMergedExercises'
 
 export default function NewExercisePage() {
   const router = useRouter()
   const createExercise = useExerciseStore((s) => s.createExercise)
+  const allExercises = useMergedExercises()
   const [aiOpen, setAiOpen] = useState(false)
   const [draft, setDraft] = useState<Partial<CreateExerciseInput> | undefined>()
   const [formKey, setFormKey] = useState(0)
@@ -65,6 +67,7 @@ export default function NewExercisePage() {
       <AiExerciseSuggestSheet
         open={aiOpen}
         onOpenChange={setAiOpen}
+        existingExercises={allExercises.map((e) => ({ id: e.id, name: e.name }))}
         onApply={(suggestion) => {
           setDraft(suggestion)
           setFormKey((k) => k + 1)

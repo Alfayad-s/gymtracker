@@ -1,31 +1,59 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { Drawer } from 'vaul'
-import { Bot, Loader2, Sparkles, X } from 'lucide-react'
+import { Bot, CheckCircle2, Loader2, Sparkles, X } from 'lucide-react'
 import type { CreateExerciseInput } from '@/data/exercises'
+import { findExistingExerciseName } from '@/lib/ai/agent-types'
 import { Button } from '@/components/ui/button'
+
+type ExistingExercise = { id: string; name: string }
 
 type AiExerciseSuggestSheetProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onApply: (suggestion: CreateExerciseInput) => void
+  /** Catalog + custom exercises for duplicate detection. */
+  existingExercises?: ExistingExercise[]
+  /** When true, confirm button says "Create exercise" (library quick-create). */
+  createMode?: boolean
+  /** Prefill the name field when opening (e.g. from library search). */
+  initialName?: string
 }
 
 export function AiExerciseSuggestSheet({
   open,
   onOpenChange,
   onApply,
+  existingExercises = [],
+  createMode = false,
+  initialName = '',
 }: AiExerciseSuggestSheetProps) {
-  const [name, setName] = useState('')
+  const [name, setName] = useState(initialName)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [suggestion, setSuggestion] = useState<CreateExerciseInput | null>(null)
+  const [existingMatch, setExistingMatch] = useState<{ id?: string; name: string } | null>(
+    null
+  )
+
+  const catalog = useMemo(
+    () => existingExercises.map((e) => ({ name: e.name })),
+    [existingExercises]
+  )
+
+  useEffect(() => {
+    if (open && initialName.trim()) {
+      setName(initialName.trim())
+    }
+  }, [open, initialName])
 
   const reset = () => {
-    setName('')
+    setName(initialName.trim())
     setError(null)
     setSuggestion(null)
+    setExistingMatch(null)
     setIsLoading(false)
   }
 
@@ -38,6 +66,18 @@ export function AiExerciseSuggestSheet({
     const trimmed = name.trim()
     if (!trimmed || isLoading) return
 
+    const matchName = findExistingExerciseName(trimmed, catalog, [])
+    if (matchName) {
+      const match = existingExercises.find(
+        (e) => e.name.toLowerCase() === matchName.toLowerCase()
+      )
+      setExistingMatch({ id: match?.id, name: matchName })
+      setSuggestion(null)
+      setError(null)
+      return
+    }
+
+    setExistingMatch(null)
     setIsLoading(true)
     setError(null)
     setSuggestion(null)
@@ -85,10 +125,10 @@ export function AiExerciseSuggestSheet({
               </div>
               <div className="min-w-0">
                 <Drawer.Title className="text-base font-bold text-foreground tracking-tight">
-                  AI exercise fill
+                  {createMode ? 'Create with AI' : 'AI exercise fill'}
                 </Drawer.Title>
                 <Drawer.Description className="text-[11px] text-muted-foreground">
-                  Enter a name — AI drafts the rest for you to confirm.
+                  Enter a name — we check the library, then AI drafts the rest.
                 </Drawer.Description>
               </div>
             </div>
@@ -103,7 +143,7 @@ export function AiExerciseSuggestSheet({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] space-y-4">
-            {!suggestion ? (
+            {!suggestion && !existingMatch ? (
               <>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -145,12 +185,50 @@ export function AiExerciseSuggestSheet({
                   ) : (
                     <>
                       <Sparkles className="h-4 w-4" />
-                      Fill with AI
+                      {createMode ? 'Check & fill with AI' : 'Fill with AI'}
                     </>
                   )}
                 </Button>
               </>
-            ) : (
+            ) : existingMatch ? (
+              <>
+                <div className="rounded-[20px] border border-primary/25 bg-primary/5 p-4 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-bold text-foreground">
+                        Already in your library
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        “{existingMatch.name}” is already available — no need to create it again.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setExistingMatch(null)
+                      setError(null)
+                    }}
+                    className="flex-1 h-12 rounded-[16px] bg-muted text-foreground border-0"
+                  >
+                    Try another name
+                  </Button>
+                  {existingMatch.id ? (
+                    <Link
+                      href={`/exercises/${existingMatch.id}`}
+                      onClick={() => handleOpenChange(false)}
+                      className="flex-1 h-12 rounded-[16px] bg-primary text-primary-foreground font-bold flex items-center justify-center"
+                    >
+                      Open exercise
+                    </Link>
+                  ) : null}
+                </div>
+              </>
+            ) : suggestion ? (
               <>
                 <div className="rounded-[20px] border border-primary/25 bg-primary/5 p-4 space-y-3">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-primary">
@@ -186,7 +264,9 @@ export function AiExerciseSuggestSheet({
                 </div>
 
                 <p className="text-[11px] text-muted-foreground text-center">
-                  Confirm to fill the form. You can edit anything before creating.
+                  {createMode
+                    ? 'Confirm to add this exercise to your library.'
+                    : 'Confirm to fill the form. You can edit anything before creating.'}
                 </p>
 
                 <div className="flex gap-2">
@@ -205,11 +285,11 @@ export function AiExerciseSuggestSheet({
                     onClick={handleConfirm}
                     className="flex-1 h-12 rounded-[16px] bg-primary text-primary-foreground font-bold border-0"
                   >
-                    Use these details
+                    {createMode ? 'Create exercise' : 'Use these details'}
                   </Button>
                 </div>
               </>
-            )}
+            ) : null}
           </div>
         </Drawer.Content>
       </Drawer.Portal>

@@ -1,4 +1,4 @@
-import type { AgentActionName } from '@/lib/ai/agent-types'
+import { AGENT_ACTION_NAMES, type AgentActionName } from '@/lib/ai/agent-types'
 
 /**
  * Extract a proposal payload from model text or Groq failed_generation dumps.
@@ -98,11 +98,24 @@ function tryParseJsonObject(text: string): Record<string, unknown> | null {
 }
 
 export function looksLikeMutationIntent(text: string): boolean {
-  return /\b(create|add|update|edit|delete|remove|change|set|start|finish|log|save|rename|build|schedule|plan)\b/i.test(
+  return /\b(create|add|update|edit|delete|remove|change|set|start|finish|log|save|rename|build|schedule|plan|import|extract)\b/i.test(
+    text
+  )
+}
+
+/** Photo of a workout list + vague text still counts as create intent. */
+export function looksLikePhotoExerciseImport(text: string, hasImages: boolean): boolean {
+  if (!hasImages) return false
+  if (!text.trim()) return true
+  if (looksLikeMutationIntent(text)) return true
+  return /\b(these|exercise|workout|routine|program|from (the )?photo|from (the )?image)\b/i.test(
     text
   )
 }
 
 export function isKnownActionName(name: unknown): name is AgentActionName {
-  return typeof name === 'string'
+  return (
+    typeof name === 'string' &&
+    (AGENT_ACTION_NAMES as readonly string[]).includes(name)
+  )
 }

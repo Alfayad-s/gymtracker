@@ -80,5 +80,24 @@ export function leanContextForModel(context: AgentContext) {
       name: ex.name,
       muscleGroup: ex.muscleGroup,
     })),
+    meals: context.meals
+      ? {
+          today: context.meals.today,
+          goals: {
+            calories: context.meals.dailyCalorieGoal,
+            proteinG: context.meals.dailyProteinGoal,
+            waterMl: context.meals.dailyWaterGoalMl,
+          },
+          waterTotalMl: context.meals.waterTotalMl,
+          todaysMeals: context.meals.todaysMeals.slice(0, 8).map((m) => ({
+            id: m.id,
+            type: m.type,
+            name: m.name,
+            calories: m.calories,
+            proteinG: m.proteinG,
+          })),
+          recentWater: context.meals.recentWater.slice(0, 5),
+        }
+      : undefined,
   }
 }

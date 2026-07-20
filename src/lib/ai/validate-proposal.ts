@@ -196,7 +196,36 @@ function validatePreconditions(
     case 'start_rest_timer':
     case 'stop_rest_timer':
     case 'set_rest_duration':
+    case 'log_meal':
+    case 'add_water':
+    case 'set_meal_goals':
       return null
+
+    case 'update_meal': {
+      const mealId = typeof params.mealId === 'string' ? params.mealId : ''
+      if (!mealId || !context.meals?.todaysMeals.some((m) => m.id === mealId)) {
+        // Allow update by id even if not in today's lean list (full meals may be older)
+        if (!mealId) return 'Meal id is required'
+      }
+      return null
+    }
+    case 'delete_meal': {
+      const mealId = typeof params.mealId === 'string' ? params.mealId.trim() : ''
+      const mealName = typeof params.name === 'string' ? params.name.trim() : ''
+      if (!mealId && !mealName) return 'Meal id or name is required to delete'
+      return null
+    }
+    case 'remove_water': {
+      const waterId = typeof params.entryId === 'string' ? params.entryId : ''
+      if (!waterId) return 'Water entry id is required'
+      if (
+        context.meals?.recentWater?.length &&
+        !context.meals.recentWater.some((w) => w.id === waterId)
+      ) {
+        return `Water entry not found: ${waterId}`
+      }
+      return null
+    }
 
     case 'update_plan':
     case 'delete_plan':

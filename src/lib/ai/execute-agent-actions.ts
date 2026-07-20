@@ -13,6 +13,7 @@ import { useRecoveryStore } from '@/stores/recoveryStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useTimerStore } from '@/stores/timerStore'
 import { useWorkoutStore } from '@/stores/workoutStore'
+import { mealTypeFromTime, todayKey, useMealStore, type MealType } from '@/stores/mealStore'
 
 export type ExecuteResult = {
   ok: boolean
@@ -440,6 +441,79 @@ function executeOne(
       case 'set_rest_duration': {
         useTimerStore.getState().setDuration(num(params.durationSeconds) ?? 90)
         return { ok: true, message: 'Default rest duration updated' }
+      }
+      case 'log_meal': {
+        const mealName = str(params.name)
+        const type = (str(params.type) as MealType) || mealTypeFromTime()
+        const id = useMealStore.getState().addMeal({
+          date: str(params.date) || todayKey(),
+          type: ['breakfast', 'lunch', 'dinner', 'snack'].includes(type)
+            ? type
+            : mealTypeFromTime(),
+          name: mealName,
+          calories: num(params.calories) ?? 0,
+          proteinG: num(params.proteinG) ?? 0,
+          carbsG: num(params.carbsG) ?? 0,
+          fatG: num(params.fatG) ?? 0,
+          notes: str(params.notes) || undefined,
+        })
+        return { ok: true, message: `Logged meal (${id})` }
+      }
+      case 'update_meal': {
+        const mealId = str(params.mealId)
+        const existing = useMealStore.getState().meals.find((m) => m.id === mealId)
+        if (!existing) return { ok: false, message: 'Meal not found' }
+        useMealStore.getState().updateMeal(mealId, {
+          ...(params.name != null ? { name: str(params.name) } : {}),
+          ...(params.type != null ? { type: str(params.type) as MealType } : {}),
+          ...(params.calories != null ? { calories: num(params.calories) } : {}),
+          ...(params.proteinG != null ? { proteinG: num(params.proteinG) } : {}),
+          ...(params.carbsG != null ? { carbsG: num(params.carbsG) } : {}),
+          ...(params.fatG != null ? { fatG: num(params.fatG) } : {}),
+          ...(params.notes != null ? { notes: str(params.notes) } : {}),
+        })
+        return { ok: true, message: `Updated meal ${existing.name}` }
+      }
+      case 'delete_meal': {
+        const mealId = str(params.mealId)
+        const name = str(params.name).toLowerCase()
+        const meals = useMealStore.getState().meals
+        const existing =
+          meals.find((m) => m.id === mealId) ||
+          (name
+            ? meals.find((m) => m.name.toLowerCase() === name) ||
+              meals.find((m) => m.name.toLowerCase().includes(name))
+            : undefined)
+        if (!existing) return { ok: false, message: 'Meal not found' }
+        useMealStore.getState().deleteMeal(existing.id)
+        return { ok: true, message: `Deleted meal ${existing.name}` }
+      }
+      case 'add_water': {
+        const amount = num(params.amountMl) ?? 0
+        const id = useMealStore.getState().addWater(amount, str(params.date) || undefined)
+        if (!id) return { ok: false, message: 'Invalid water amount' }
+        return { ok: true, message: `Logged ${amount}ml water` }
+      }
+      case 'remove_water': {
+        const entryId = str(params.entryId)
+        const exists = useMealStore.getState().waterLogs.some((w) => w.id === entryId)
+        if (!exists) return { ok: false, message: 'Water entry not found' }
+        useMealStore.getState().removeWater(entryId)
+        return { ok: true, message: 'Water entry removed' }
+      }
+      case 'set_meal_goals': {
+        useMealStore.getState().setGoals({
+          ...(params.dailyCalorieGoal != null
+            ? { dailyCalorieGoal: num(params.dailyCalorieGoal) }
+            : {}),
+          ...(params.dailyProteinGoal != null
+            ? { dailyProteinGoal: num(params.dailyProteinGoal) }
+            : {}),
+          ...(params.dailyWaterGoalMl != null
+            ? { dailyWaterGoalMl: num(params.dailyWaterGoalMl) }
+            : {}),
+        })
+        return { ok: true, message: 'Meal goals updated' }
       }
       default:
         return { ok: false, message: `Unsupported action: ${name}` }

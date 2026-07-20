@@ -70,6 +70,25 @@ function mockContext(overrides: Partial<AgentContext> = {}): AgentContext {
         equipment: 'Barbell',
       },
     ],
+    meals: {
+      today: '2026-07-20',
+      dailyCalorieGoal: 2500,
+      dailyProteinGoal: 160,
+      dailyWaterGoalMl: 3000,
+      waterTotalMl: 500,
+      todaysMeals: [
+        {
+          id: 'meal-1',
+          type: 'lunch',
+          name: 'Chicken bowl',
+          calories: 600,
+          proteinG: 40,
+          carbsG: 55,
+          fatG: 18,
+        },
+      ],
+      recentWater: [{ id: 'water-1', amountMl: 500 }],
+    },
     ...overrides,
   }
 }
@@ -95,11 +114,14 @@ describe('riskForAction', () => {
   it('marks destructive actions as high risk', () => {
     assert.equal(riskForAction('delete_plan'), 'high')
     assert.equal(riskForAction('clear_history'), 'high')
+    assert.equal(riskForAction('delete_meal'), 'high')
+    assert.equal(riskForAction('remove_water'), 'high')
   })
 
   it('marks create actions as low risk', () => {
     assert.equal(riskForAction('create_plan'), 'low')
     assert.equal(riskForAction('start_workout'), 'low')
+    assert.equal(riskForAction('log_meal'), 'low')
   })
 })
 

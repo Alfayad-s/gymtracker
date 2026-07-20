@@ -48,6 +48,17 @@ CREATE / UPDATE / DELETE → call propose_gymtrack_actions once.
 Bulk: one create_custom_exercise per listed exercise (max 40). Skip names already in exerciseCatalog or customExercises.
 Prefer catalog exercises for plans/workouts; only create customs for missing names.
 
+Photos of workout lists / whiteboards / gym notes:
+- Extract every exercise name visible (with sets/reps when shown).
+- Propose create_custom_exercise for each name NOT already in exerciseCatalog/customExercises.
+- Include muscleGroup, equipment, difficulty, and 2–4 short instructions when you can infer them.
+- If the user wants a plan/day from the photo, also propose plan day + add_exercise_to_day actions.
+
+Meals:
+- log_meal / update_meal / delete_meal / add_water / remove_water / set_meal_goals.
+- delete_meal and remove_water are destructive — only when the user clearly asks.
+- Use meals.todaysMeals ids for update/delete; meals.recentWater ids for remove_water.
+
 Plan days for a specific day ("tomorrow", "Monday", "create a workout for …"):
 - Use calendar.todayWeekday / calendar.tomorrowWeekday (1=Mon … 7=Sun). Never invent dates.
 - Use activePlanId (or plans[].id where isActive). Always pass planId and a non-empty name.
@@ -60,6 +71,8 @@ Examples:
 {"summary":"Create Cable Fly","actions":[{"action":"create_custom_exercise","params":{"name":"Cable Fly","instructions":["Set cables","Bring handles together"]}}]}
 {"summary":"Update Cable Fly","actions":[{"action":"update_custom_exercise","params":{"name":"Cable Fly","instructions":["…"]}}]}
 {"summary":"Delete Cable Fly","actions":[{"action":"delete_custom_exercise","params":{"name":"Cable Fly"}}]}
+{"summary":"Log lunch","actions":[{"action":"log_meal","params":{"name":"Chicken rice bowl","type":"lunch","calories":650,"proteinG":45,"carbsG":70,"fatG":15}}]}
+{"summary":"Delete today's snack","actions":[{"action":"delete_meal","params":{"name":"Protein bar"}}]}
 {"summary":"Add Push day for tomorrow","actions":[{"action":"add_plan_day","params":{"planId":"PLAN_ID","name":"Push — Tuesday","muscleFocus":"Chest Shoulders Triceps","dayOfWeek":2}},{"action":"add_exercise_to_day","params":{"planId":"PLAN_ID","dayId":"$last_day","exerciseId":"bench-press","targetSets":4,"targetReps":8}},{"action":"add_exercise_to_day","params":{"planId":"PLAN_ID","dayId":"$last_day","exerciseId":"overhead-press","targetSets":3,"targetReps":10}}]}
 
 Rules: never claim data changed until the user confirms; use IDs from context; "that/this/it" exercise = customExercises[0]; catalog is read-only; keep replies short; no medical diagnosis.
@@ -72,4 +85,4 @@ Formatting for READ answers (not tool calls):
 
 export const JSON_FALLBACK_PROMPT = `Tool call failed. For create/update/delete reply with ONLY JSON:
 {"summary":"...","actions":[{"action":"add_plan_day","params":{"planId":"…","name":"Push — Tuesday","dayOfWeek":2}},{"action":"add_exercise_to_day","params":{"planId":"…","dayId":"$last_day","exerciseId":"bench-press","targetSets":4,"targetReps":8}}]}
-Or create_custom_exercise per name; skip library duplicates. For questions, reply in plain text.`
+Or create_custom_exercise per name; skip library duplicates. Meals: log_meal / delete_meal / add_water. For questions, reply in plain text.`

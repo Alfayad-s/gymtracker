@@ -18,6 +18,7 @@ import { useRecoveryStore } from '@/stores/recoveryStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useTimerStore } from '@/stores/timerStore'
 import { useWorkoutStore } from '@/stores/workoutStore'
+import { todayKey, useMealStore } from '@/stores/mealStore'
 
 const HISTORY_LIMIT = 5
 const CATALOG_LIMIT = 60
@@ -34,6 +35,11 @@ export function buildAgentContext(): AgentContext {
   const profile = useProfileStore.getState()
   const theme = useThemeStore.getState().theme
   const timer = useTimerStore.getState()
+  const mealState = useMealStore.getState()
+  const mealDate = todayKey()
+  const todaysMeals = mealState.getMealsForDate(mealDate)
+  const waterTotalMl = mealState.getWaterTotalMl(mealDate)
+  const recentWater = mealState.getWaterForDate(mealDate).slice(0, 8)
 
   const catalog = getAllExercises(customExercises).slice(0, CATALOG_LIMIT)
 
@@ -137,6 +143,26 @@ export function buildAgentContext(): AgentContext {
       equipment: ex.equipment,
       isCustom: ex.isCustom,
     })),
+    meals: {
+      today: mealDate,
+      dailyCalorieGoal: mealState.dailyCalorieGoal,
+      dailyProteinGoal: mealState.dailyProteinGoal,
+      dailyWaterGoalMl: mealState.dailyWaterGoalMl,
+      waterTotalMl,
+      todaysMeals: todaysMeals.slice(0, 12).map((m) => ({
+        id: m.id,
+        type: m.type,
+        name: m.name,
+        calories: m.calories,
+        proteinG: m.proteinG,
+        carbsG: m.carbsG,
+        fatG: m.fatG,
+      })),
+      recentWater: recentWater.map((w) => ({
+        id: w.id,
+        amountMl: w.amountMl,
+      })),
+    },
   }
 }
 

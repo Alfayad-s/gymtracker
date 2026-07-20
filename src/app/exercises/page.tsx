@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Search, ChevronRight, Plus, Layers3, Film } from 'lucide-react'
+import { ArrowLeft, Search, ChevronRight, Plus, Layers3, Film, Sparkles } from 'lucide-react'
 import {
   DEFAULT_EXERCISE_IMAGE,
   EXERCISE_CATALOG,
@@ -12,6 +12,8 @@ import {
 import { MuscleFocusPreview } from '@/components/muscle-map'
 import { useMergedExercises } from '@/hooks/useMergedExercises'
 import { useMuscleGroups } from '@/hooks/useMuscleGroups'
+import { AiExerciseSuggestSheet } from '@/components/exercises/AiExerciseSuggestSheet'
+import { useExerciseStore } from '@/stores/exerciseStore'
 
 const DIFFICULTY_STYLE: Record<ExerciseDifficulty, string> = {
   beginner: 'text-primary bg-primary/10 border-primary/20',
@@ -23,8 +25,11 @@ export default function ExerciseLibraryPage() {
   const router = useRouter()
   const allExercises = useMergedExercises()
   const muscleGroups = useMuscleGroups()
+  const createExercise = useExerciseStore((s) => s.createExercise)
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState<string>('All')
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiSeedName, setAiSeedName] = useState('')
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -70,6 +75,17 @@ export default function ExerciseLibraryPage() {
           >
             <Layers3 className="w-4 h-4" />
           </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setAiSeedName(search.trim())
+                setAiOpen(true)
+              }}
+              className="h-10 w-10 rounded-[14px] bg-primary/15 border border-primary/30 text-primary flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+              aria-label="Create exercise with AI"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
           <Link
             href="/exercises/new"
             className="h-10 px-3 rounded-[14px] bg-primary text-primary-foreground text-xs font-bold flex items-center gap-1.5 shrink-0 active:scale-95"
@@ -109,9 +125,18 @@ export default function ExerciseLibraryPage() {
         {filtered.length === 0 ? (
           <div className="text-center py-10 space-y-3">
             <p className="text-xs text-muted-foreground">No exercises found.</p>
-            <Link href="/exercises/new" className="text-xs font-bold text-primary">
-              Create your first custom exercise
-            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setAiSeedName(search.trim())
+                setAiOpen(true)
+              }}
+              className="text-xs font-bold text-primary cursor-pointer"
+            >
+              {search.trim()
+                ? `Create “${search.trim()}” with AI`
+                : 'Create a custom exercise with AI'}
+            </button>
           </div>
         ) : (
           filtered.map((ex) => (
@@ -186,6 +211,21 @@ export default function ExerciseLibraryPage() {
           ))
         )}
       </div>
+
+      <AiExerciseSuggestSheet
+        open={aiOpen}
+        onOpenChange={(open) => {
+          setAiOpen(open)
+          if (!open) setAiSeedName('')
+        }}
+        createMode
+        initialName={aiSeedName}
+        existingExercises={allExercises.map((e) => ({ id: e.id, name: e.name }))}
+        onApply={(suggestion) => {
+          const id = createExercise(suggestion)
+          router.push(`/exercises/${id}`)
+        }}
+      />
     </div>
   )
 }

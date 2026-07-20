@@ -48,10 +48,31 @@ export type GroqChatResult =
   | { kind: 'tool_call'; toolName: string; arguments: string; assistantText: string | null }
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const DEFAULT_MODEL = 'llama-3.1-8b-instant'
-const DEFAULT_VISION_MODEL = 'qwen/qwen3.6-27b'
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504])
-const KEY_COOLDOWN_MS = 60_000
+
+/**
+ * Model picks (free / base org limits from https://console.groq.com/docs/rate-limits):
+ *
+ * | Model                    | Speed   | RPM | RPD   | TPM | Notes                          |
+ * |--------------------------|---------|-----|-------|-----|--------------------------------|
+ * | openai/gpt-oss-20b       | ~1000t/s| 30  | 1K    | 8K  | Primary — fastest production   |
+ * | llama-3.1-8b-instant     | ~560t/s | 30  | 14.4K | 6K  | Volume fallback (until Aug’26) |
+ * | openai/gpt-oss-120b      | ~500t/s | 30  | 1K    | 8K  | Quality fallback               |
+ * | qwen/qwen3.6-27b         | ~500t/s | 30  | 1K    | 8K  | Vision / multimodal            |
+ * | groq/compound-mini       | ~450t/s | 30  | 250   | 70K | Avoid — tiny daily cap         |
+ *
+ * Quotas are per organization + per model. Rotating keys in the same org does
+ * not raise limits; switching models uses a separate quota bucket.
+ * See https://console.groq.com/docs/rate-limits and /docs/deprecations
+ */
+const PRIMARY_CHAT_MODEL = 'openai/gpt-oss-20b'
+const CHAT_FALLBACK_MODELS = ['llama-3.1-8b-instant', 'openai/gpt-oss-120b'] as const
+const PRIMARY_VISION_MODEL = 'qwen/qwen3.6-27b'
+
+/** Default cooldown when retry-after is missing (TPM often resets in ~8–15s). */
+const MODEL_COOLDOWN_MS = 20_000
+const KEY_COOLDOWN_MS = 45_000
+const modelCooldownUntil = new Map<string, number>()
 const keyCooldownUntil = new Map<string, number>()
 
 function getGroqKeys() {
@@ -61,17 +82,66 @@ function getGroqKeys() {
     .filter(Boolean)
 }
 
+function parseCsvList(value: string | undefined): string[] {
+  if (!value?.trim()) return []
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function uniqueModels(models: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const model of models) {
+    if (!model || seen.has(model)) continue
+    seen.add(model)
+    out.push(model)
+  }
+  return out
+}
+
+/** Chat / agent / suggest chain — primary + fallbacks with separate rate-limit buckets. */
+export function getChatModelChain(preferred?: string): string[] {
+  const primary = preferred || process.env.GROQ_MODEL || PRIMARY_CHAT_MODEL
+  const envFallbacks = parseCsvList(process.env.GROQ_MODEL_FALLBACKS)
+  const defaults = envFallbacks.length > 0 ? envFallbacks : [...CHAT_FALLBACK_MODELS]
+  return uniqueModels([primary, ...defaults])
+}
+
+/** Vision chain — Qwen 3.6 is the production multimodal model on Groq. */
+export function getVisionModelChain(preferred?: string): string[] {
+  const primary = preferred || process.env.GROQ_VISION_MODEL || PRIMARY_VISION_MODEL
+  const envFallbacks = parseCsvList(process.env.GROQ_VISION_MODEL_FALLBACKS)
+  return uniqueModels([primary, ...envFallbacks])
+}
+
 function getStartIndex(keysLength: number) {
   if (keysLength <= 1) return 0
   return Math.floor(Math.random() * keysLength)
 }
 
-function isKeyCoolingDown(key: string) {
-  return (keyCooldownUntil.get(key) ?? 0) > Date.now()
+function isCoolingDown(map: Map<string, number>, id: string) {
+  return (map.get(id) ?? 0) > Date.now()
 }
 
-function coolDownKey(key: string) {
-  keyCooldownUntil.set(key, Date.now() + KEY_COOLDOWN_MS)
+function coolDown(map: Map<string, number>, id: string, ms: number) {
+  const until = Date.now() + Math.max(1_000, ms)
+  const prev = map.get(id) ?? 0
+  if (until > prev) map.set(id, until)
+}
+
+function parseRetryAfterMs(header: string | null): number | null {
+  if (!header) return null
+  const seconds = Number(header)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(120_000, Math.max(1_000, seconds * 1000))
+  }
+  const dateMs = Date.parse(header)
+  if (Number.isFinite(dateMs)) {
+    return Math.min(120_000, Math.max(1_000, dateMs - Date.now()))
+  }
+  return null
 }
 
 function isToolUseFailure(message: string) {
@@ -81,7 +151,9 @@ function isToolUseFailure(message: string) {
 }
 
 function isTpmOrRateLimitMessage(message: string) {
-  return /tokens per minute|tpm|rate limit|too many requests|429/i.test(message)
+  return /tokens per minute|tpm|rate limit|too many requests|429|requests per (day|minute)|rpd|rpm/i.test(
+    message
+  )
 }
 
 export function isRateLimitError(error: unknown): boolean {
@@ -109,16 +181,16 @@ async function callGroq(params: {
   tools?: unknown[]
   toolChoice?: 'auto' | 'none'
   temperature?: number
-  model?: string
+  model: string
   maxTokens?: number
   reasoningEffort?: 'none' | 'default' | 'low' | 'medium' | 'high'
   signal: AbortSignal
 }) {
   const body: Record<string, unknown> = {
-    model: params.model || process.env.GROQ_MODEL || DEFAULT_MODEL,
+    model: params.model,
     messages: params.messages,
     temperature: params.temperature ?? 0.45,
-    max_tokens: params.maxTokens ?? 1400,
+    max_tokens: params.maxTokens ?? 1200,
   }
   if (params.tools?.length) {
     body.tools = params.tools
@@ -166,10 +238,18 @@ type RunOptions = {
   toolChoice?: 'auto' | 'none'
   temperature?: number
   allowToolFallback?: boolean
+  /** Explicit single model; otherwise use modelChain / chat defaults. */
   model?: string
+  /** Ordered failover list (separate rate-limit buckets). */
+  modelChain?: string[]
   maxTokens?: number
   timeoutMs?: number
   reasoningEffort?: 'none' | 'default' | 'low' | 'medium' | 'high'
+}
+
+function orderedKeys(keys: string[]): string[] {
+  const startIndex = getStartIndex(keys.length)
+  return keys.map((_, i) => keys[(startIndex + i) % keys.length])
 }
 
 async function runGroqChat(
@@ -181,71 +261,100 @@ async function runGroqChat(
     throw new Error('GROQ_API_KEYS is not configured')
   }
 
-  const startIndex = getStartIndex(keys.length)
+  const modelChain = uniqueModels(
+    options.modelChain?.length
+      ? options.modelChain
+      : options.model
+        ? [options.model]
+        : getChatModelChain()
+  )
+
   let lastError = 'Groq request failed'
   let failedGeneration: string | null = null
   let sawToolSchemaError = false
 
-  for (let attempt = 0; attempt < keys.length; attempt += 1) {
-    const key = keys[(startIndex + attempt) % keys.length]
-    if (isKeyCoolingDown(key) && keys.some((candidate) => !isKeyCoolingDown(candidate))) {
+  for (const model of modelChain) {
+    if (isCoolingDown(modelCooldownUntil, model) && modelChain.some((m) => !isCoolingDown(modelCooldownUntil, m))) {
       continue
     }
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000)
+    const keysToTry = orderedKeys(keys).filter(
+      (key) => !isCoolingDown(keyCooldownUntil, key) || keys.every((k) => isCoolingDown(keyCooldownUntil, k))
+    )
 
-    try {
-      const { response, data } = await callGroq({
-        apiKey: key,
-        messages,
-        tools: options.tools,
-        toolChoice: options.toolChoice,
-        temperature: options.temperature,
-        model: options.model,
-        maxTokens: options.maxTokens,
-        reasoningEffort: options.reasoningEffort,
-        signal: controller.signal,
-      })
+    let modelRateLimited = false
 
-      if (response.ok) {
-        return parseGroqResult(data)
-      }
+    for (const key of keysToTry) {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000)
 
-      lastError = data.error?.message || `Groq error ${response.status}`
-      failedGeneration = stringifyFailedGeneration(data.error?.failed_generation)
+      try {
+        const { response, data } = await callGroq({
+          apiKey: key,
+          messages,
+          tools: options.tools,
+          toolChoice: options.toolChoice,
+          temperature: options.temperature,
+          model,
+          maxTokens: options.maxTokens,
+          reasoningEffort: options.reasoningEffort,
+          signal: controller.signal,
+        })
 
-      if (isToolUseFailure(lastError) || data.error?.code === 'tool_use_failed') {
-        sawToolSchemaError = true
-        break
-      }
-      if (response.status === 429 || isTpmOrRateLimitMessage(lastError)) {
-        coolDownKey(key)
-        continue
-      }
+        if (response.ok) {
+          return parseGroqResult(data)
+        }
 
-      if (!RETRYABLE_STATUS.has(response.status)) {
-        const err = new Error(lastError) as Error & { failedGeneration?: string | null }
-        err.failedGeneration = failedGeneration
-        throw err
+        lastError = data.error?.message || `Groq error ${response.status}`
+        failedGeneration = stringifyFailedGeneration(data.error?.failed_generation)
+
+        if (isToolUseFailure(lastError) || data.error?.code === 'tool_use_failed') {
+          sawToolSchemaError = true
+          break
+        }
+
+        if (response.status === 429 || isTpmOrRateLimitMessage(lastError)) {
+          const retryMs = parseRetryAfterMs(response.headers.get('retry-after')) ?? MODEL_COOLDOWN_MS
+          // Quotas are org+model; cool the model and move to the next bucket.
+          coolDown(modelCooldownUntil, model, retryMs)
+          coolDown(keyCooldownUntil, key, Math.min(retryMs, KEY_COOLDOWN_MS))
+          modelRateLimited = true
+          lastError = `Rate limited on ${model}. Trying another model…`
+          break
+        }
+
+        if (!RETRYABLE_STATUS.has(response.status)) {
+          const err = new Error(lastError) as Error & { failedGeneration?: string | null }
+          err.failedGeneration = failedGeneration
+          throw err
+        }
+      } catch (error) {
+        if (error instanceof Error && (error as { failedGeneration?: string }).failedGeneration) {
+          throw error
+        }
+        lastError =
+          error instanceof Error && error.name === 'AbortError'
+            ? 'Groq request timed out'
+            : error instanceof Error
+              ? error.message
+              : lastError
+        if (isToolUseFailure(lastError)) {
+          sawToolSchemaError = true
+          break
+        }
+        if (isTpmOrRateLimitMessage(lastError)) {
+          coolDown(modelCooldownUntil, model, MODEL_COOLDOWN_MS)
+          coolDown(keyCooldownUntil, key, KEY_COOLDOWN_MS)
+          modelRateLimited = true
+          break
+        }
+      } finally {
+        clearTimeout(timeout)
       }
-    } catch (error) {
-      if (error instanceof Error && (error as { failedGeneration?: string }).failedGeneration) {
-        throw error
-      }
-      lastError =
-        error instanceof Error && error.name === 'AbortError'
-          ? 'Groq request timed out'
-          : error instanceof Error
-            ? error.message
-            : lastError
-      if (isToolUseFailure(lastError)) {
-        sawToolSchemaError = true
-        break
-      }
-    } finally {
-      clearTimeout(timeout)
     }
+
+    if (sawToolSchemaError) break
+    if (modelRateLimited) continue
   }
 
   if (
@@ -266,21 +375,30 @@ async function runGroqChat(
     }
   }
 
-  const err = new Error(lastError) as Error & { failedGeneration?: string | null }
+  const err = new Error(
+    isTpmOrRateLimitMessage(lastError)
+      ? 'AI is busy right now (rate limit). Wait a few seconds and try again.'
+      : lastError
+  ) as Error & { failedGeneration?: string | null }
   err.failedGeneration = failedGeneration
   throw err
 }
 
 /** Legacy text-only completion. */
 export async function completeGroqChat(messages: GroqMessage[]) {
-  const result = await runGroqChat(messages, { toolChoice: 'none', temperature: 0.55 })
+  const result = await runGroqChat(messages, {
+    toolChoice: 'none',
+    temperature: 0.55,
+    modelChain: getChatModelChain(),
+    maxTokens: 1000,
+  })
   if (result.kind !== 'text') {
     throw new Error('Expected text response from Groq')
   }
   return result.content
 }
 
-/** Agent chat with optional tool calling. */
+/** Agent chat with optional tool calling — fastest model first, then failover. */
 export async function completeGroqAgentChat(
   messages: GroqMessage[],
   tools: unknown[]
@@ -290,15 +408,20 @@ export async function completeGroqAgentChat(
     toolChoice: 'auto',
     temperature: 0.2,
     allowToolFallback: true,
+    modelChain: getChatModelChain(),
+    maxTokens: 1400,
+    timeoutMs: 25_000,
   })
 }
 
-/** Plain text completion used when tool calling fails. */
+/** Plain text completion used when tool calling fails / form fill. */
 export async function completeGroqTextChat(messages: GroqMessage[]) {
   const result = await runGroqChat(messages, {
     toolChoice: 'none',
     temperature: 0.25,
     allowToolFallback: false,
+    modelChain: getChatModelChain(),
+    maxTokens: 1200,
   })
   if (result.kind === 'text') return result.content
   if (result.kind === 'tool_call') {
@@ -307,21 +430,19 @@ export async function completeGroqTextChat(messages: GroqMessage[]) {
   return ''
 }
 
-/** Vision / multimodal completion for meal photo analysis. */
+/** Vision / multimodal — Qwen 3.6 (only strong vision model on Groq right now). */
 export async function completeGroqVisionChat(
   messages: GroqMessage[],
   options?: { maxTokens?: number; temperature?: number }
 ) {
-  const model = process.env.GROQ_VISION_MODEL || DEFAULT_VISION_MODEL
-
   const result = await runGroqChat(messages, {
     toolChoice: 'none',
     temperature: options?.temperature ?? 0.1,
     allowToolFallback: false,
-    model,
-    maxTokens: options?.maxTokens ?? 2000,
+    modelChain: getVisionModelChain(),
+    maxTokens: options?.maxTokens ?? 1800,
     timeoutMs: 45_000,
-    // Qwen 3.6 supports reasoning_effort=none for clean JSON (no thinking tokens).
+    // Qwen 3.6: reasoning_effort=none keeps output clean (no thinking tokens).
     reasoningEffort: 'none',
   })
 

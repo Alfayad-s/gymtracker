@@ -1,16 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import {
   Apple,
-  Camera,
   Coffee,
   Cookie,
   Droplets,
   Loader2,
   Plus,
-  Sparkles,
   Trash2,
   UtensilsCrossed,
   Moon,
@@ -27,8 +25,7 @@ import {
 } from '@/stores/mealStore'
 import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
-
-const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack']
+import { MealLogSheet } from '@/components/meals/MealLogSheet'
 
 const TYPE_ICON: Record<MealType, typeof Coffee> = {
   breakfast: Coffee,
@@ -111,7 +108,6 @@ export default function MealsPage() {
   const getWaterTotalMl = useMealStore((s) => s.getWaterTotalMl)
   const user = useAuthStore((s) => s.user)
 
-  const photoRef = useRef<HTMLInputElement>(null)
   const [hydrated, setHydrated] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [type, setType] = useState<MealType>(() => mealTypeFromTime())
@@ -128,6 +124,7 @@ export default function MealsPage() {
   const [customWater, setCustomWater] = useState('')
   const [waterBusy, setWaterBusy] = useState(false)
   const [waterNote, setWaterNote] = useState<string | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   const date = todayKey()
 
@@ -361,10 +358,6 @@ export default function MealsPage() {
     }
   }
 
-  const busy = uploading || analyzing
-  const inputClass =
-    'w-full h-11 bg-muted border border-border rounded-[14px] px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary'
-
   return (
     <div className="p-5 space-y-5 pb-8">
       <div className="flex items-start justify-between gap-3">
@@ -383,6 +376,40 @@ export default function MealsPage() {
           Log meal
         </button>
       </div>
+
+      <MealLogSheet
+        open={showForm}
+        onOpenChange={(open) => {
+          if (!open) resetForm()
+          else setShowForm(true)
+        }}
+        type={type}
+        onTypeChange={setType}
+        name={name}
+        onNameChange={setName}
+        calories={calories}
+        onCaloriesChange={setCalories}
+        protein={protein}
+        onProteinChange={setProtein}
+        carbs={carbs}
+        onCarbsChange={setCarbs}
+        fat={fat}
+        onFatChange={setFat}
+        imageUrl={imageUrl}
+        onClearImage={() => {
+          setImageUrl('')
+          setAiNote(null)
+        }}
+        uploading={uploading}
+        analyzing={analyzing}
+        photoError={photoError}
+        aiNote={aiNote}
+        onSubmit={handleAdd}
+        onPhotoPick={handlePhotoPick}
+        onAnalyzeAgain={handleAnalyzeAgain}
+        onEstimateFromText={handleEstimateFromText}
+        onCancel={resetForm}
+      />
 
       {!hydrated ? (
         <div className="space-y-3 animate-pulse" aria-busy="true">
@@ -557,206 +584,6 @@ export default function MealsPage() {
             )}
           </section>
 
-          {showForm && (
-            <form
-              onSubmit={handleAdd}
-              className="bg-card border border-border rounded-[24px] p-4 space-y-3"
-            >
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                New meal
-              </p>
-
-              <div className="rounded-[20px] border border-border bg-muted/40 overflow-hidden">
-                <div className="relative aspect-[16/10] bg-background">
-                  {imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={imageUrl}
-                      alt="Meal photo preview"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                      <Camera className="w-8 h-8 opacity-50" />
-                      <p className="text-xs">Snap a photo for AI logging</p>
-                    </div>
-                  )}
-                  {busy && (
-                    <div className="absolute inset-0 bg-background/70 flex flex-col items-center justify-center gap-2">
-                      <Loader2 className="w-6 h-6 text-primary animate-spin" />
-                      <p className="text-xs font-medium text-foreground">
-                        {uploading ? 'Uploading photo…' : 'AI reading meal…'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-2 p-3">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => photoRef.current?.click()}
-                    className="flex-1 h-11 rounded-[14px] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] disabled:opacity-60 bg-primary text-primary-foreground"
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                    {imageUrl ? 'Retake photo' : 'Take / choose photo'}
-                  </button>
-                  {imageUrl && (
-                    <>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void handleAnalyzeAgain()}
-                        className="h-11 px-3 rounded-[14px] bg-card border border-border text-primary cursor-pointer active:scale-95 disabled:opacity-60"
-                        aria-label="Analyze with AI"
-                        title="Analyze with AI"
-                      >
-                        <Sparkles className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          setImageUrl('')
-                          setAiNote(null)
-                        }}
-                        className="h-11 px-3 rounded-[14px] bg-card border border-border text-muted-foreground cursor-pointer active:scale-95 disabled:opacity-60"
-                        aria-label="Remove photo"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
-                </div>
-                <input
-                  ref={photoRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  capture="environment"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    e.target.value = ''
-                    void handlePhotoPick(file)
-                  }}
-                />
-              </div>
-
-              {photoError && (
-                <p className="text-xs text-destructive px-0.5">{photoError}</p>
-              )}
-              {aiNote && !photoError && (
-                <p className="text-[11px] text-muted-foreground px-0.5">
-                  AI note: {aiNote}
-                </p>
-              )}
-
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide">
-                {MEAL_TYPES.map((t) => {
-                  const Icon = TYPE_ICON[t]
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setType(t)}
-                      className={`shrink-0 h-9 px-3 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer ${
-                        type === t
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted text-muted-foreground'
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      {MEAL_TYPE_LABELS[t]}
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="text-[10px] text-muted-foreground px-0.5 -mt-1">
-                Suggested from current time · change if needed
-              </p>
-
-              <div className="space-y-2">
-                <textarea
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder='What did you eat? e.g. "2 eggs, 2 toast, peanut butter, banana"'
-                  rows={3}
-                  className="w-full min-h-[88px] bg-muted border border-border rounded-[14px] px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-y"
-                  required
-                />
-                <button
-                  type="button"
-                  disabled={busy || !name.trim()}
-                  onClick={() => void handleEstimateFromText()}
-                  className="w-full h-11 rounded-[14px] bg-primary/15 border border-primary/25 text-primary text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] disabled:opacity-50"
-                >
-                  {analyzing && !uploading && !imageUrl ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Estimating macros…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Estimate calories with AI
-                    </>
-                  )}
-                </button>
-                <p className="text-[10px] text-muted-foreground px-0.5">
-                  Describe foods and amounts — AI fills calories, protein, carbs, and fat.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  value={calories}
-                  onChange={(e) => setCalories(e.target.value.replace(/[^\d]/g, ''))}
-                  inputMode="numeric"
-                  placeholder="Calories"
-                  className={inputClass}
-                />
-                <input
-                  value={protein}
-                  onChange={(e) => setProtein(e.target.value.replace(/[^\d]/g, ''))}
-                  inputMode="numeric"
-                  placeholder="Protein (g)"
-                  className={inputClass}
-                />
-                <input
-                  value={carbs}
-                  onChange={(e) => setCarbs(e.target.value.replace(/[^\d]/g, ''))}
-                  inputMode="numeric"
-                  placeholder="Carbs (g)"
-                  className={inputClass}
-                />
-                <input
-                  value={fat}
-                  onChange={(e) => setFat(e.target.value.replace(/[^\d]/g, ''))}
-                  inputMode="numeric"
-                  placeholder="Fat (g)"
-                  className={inputClass}
-                />
-              </div>
-
-              <div className="flex gap-2 pt-1">
-                <Button
-                  type="button"
-                  onClick={resetForm}
-                  disabled={busy}
-                  className="flex-1 h-11 rounded-[14px] bg-muted text-foreground border-0"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={!name.trim() || busy}
-                  className="flex-1 h-11 rounded-[14px] bg-primary text-primary-foreground font-bold border-0"
-                >
-                  Save meal
-                </Button>
-              </div>
-            </form>
-          )}
-
           <section className="space-y-3">
             <h2 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground px-0.5">
               Logged today
@@ -774,6 +601,7 @@ export default function MealsPage() {
               <div className="space-y-2.5">
                 {todaysMeals.map((meal) => {
                   const Icon = TYPE_ICON[meal.type]
+                  const confirming = pendingDeleteId === meal.id
                   return (
                     <div
                       key={meal.id}
@@ -803,14 +631,36 @@ export default function MealsPage() {
                               {format(new Date(meal.createdAt), 'h:mm a')}
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => deleteMeal(meal.id)}
-                            className="p-2 rounded-xl text-destructive hover:bg-destructive/10 cursor-pointer"
-                            aria-label="Delete meal"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {confirming ? (
+                            <div className="flex gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  deleteMeal(meal.id)
+                                  setPendingDeleteId(null)
+                                }}
+                                className="h-8 px-2.5 rounded-xl bg-destructive text-white text-[10px] font-bold cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPendingDeleteId(null)}
+                                className="h-8 px-2.5 rounded-xl bg-muted text-muted-foreground text-[10px] font-bold cursor-pointer"
+                              >
+                                Keep
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setPendingDeleteId(meal.id)}
+                              className="p-2 rounded-xl text-destructive hover:bg-destructive/10 cursor-pointer"
+                              aria-label="Delete meal"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
                           <span>

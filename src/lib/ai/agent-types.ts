@@ -49,6 +49,13 @@ export const AGENT_ACTION_NAMES = [
   'start_rest_timer',
   'stop_rest_timer',
   'set_rest_duration',
+  // Meals & water
+  'log_meal',
+  'update_meal',
+  'delete_meal',
+  'add_water',
+  'remove_water',
+  'set_meal_goals',
 ] as const
 
 export type AgentActionName = (typeof AGENT_ACTION_NAMES)[number]
@@ -176,6 +183,28 @@ export function coerceActionParams(
   if (action === 'start_workout') {
     if (typeof raw.name === 'string') raw.name = raw.name.trim()
     else if (raw.name == null) delete raw.name
+  }
+
+  if (action === 'log_meal') {
+    if (typeof raw.name === 'string') raw.name = raw.name.trim()
+    if (typeof raw.type === 'string') {
+      const t = raw.type.toLowerCase().trim()
+      if (t.startsWith('break')) raw.type = 'breakfast'
+      else if (t.startsWith('lun')) raw.type = 'lunch'
+      else if (t.startsWith('din')) raw.type = 'dinner'
+      else if (t.startsWith('sn')) raw.type = 'snack'
+    }
+    for (const key of ['calories', 'proteinG', 'carbsG', 'fatG'] as const) {
+      if (typeof raw[key] === 'string') {
+        const n = Number(raw[key])
+        if (Number.isFinite(n)) raw[key] = n
+      }
+    }
+  }
+
+  if (action === 'add_water' && typeof raw.amountMl === 'string') {
+    const n = Number(raw.amountMl)
+    if (Number.isFinite(n)) raw.amountMl = n
   }
 
   if (action === 'add_plan_day' || action === 'update_plan_day') {
@@ -333,6 +362,42 @@ const actionSchemas: Record<AgentActionName, z.ZodType<Record<string, unknown>>>
   set_rest_duration: z.object({
     durationSeconds: z.number().int().min(5).max(600),
   }),
+  log_meal: z.object({
+    name: nonEmptyString,
+    type: z.enum(['breakfast', 'lunch', 'dinner', 'snack']).optional(),
+    calories: z.number().min(0).max(10000).optional(),
+    proteinG: z.number().min(0).max(1000).optional(),
+    carbsG: z.number().min(0).max(1000).optional(),
+    fatG: z.number().min(0).max(1000).optional(),
+    notes: z.string().trim().max(500).optional(),
+    date: z.string().trim().max(40).optional(),
+  }),
+  update_meal: z.object({
+    mealId: idString,
+    name: optionalString,
+    type: z.enum(['breakfast', 'lunch', 'dinner', 'snack']).optional(),
+    calories: z.number().min(0).max(10000).optional(),
+    proteinG: z.number().min(0).max(1000).optional(),
+    carbsG: z.number().min(0).max(1000).optional(),
+    fatG: z.number().min(0).max(1000).optional(),
+    notes: z.string().trim().max(500).optional(),
+  }),
+  delete_meal: z.object({
+    mealId: z.string().trim().max(120).optional(),
+    name: z.string().trim().max(500).optional(),
+  }),
+  add_water: z.object({
+    amountMl: z.number().int().min(50).max(5000),
+    date: z.string().trim().max(40).optional(),
+  }),
+  remove_water: z.object({
+    entryId: idString,
+  }),
+  set_meal_goals: z.object({
+    dailyCalorieGoal: z.number().int().min(500).max(10000).optional(),
+    dailyProteinGoal: z.number().int().min(20).max(500).optional(),
+    dailyWaterGoalMl: z.number().int().min(500).max(10000).optional(),
+  }),
 }
 
 export const MAX_AGENT_ACTIONS = 40
@@ -469,6 +534,23 @@ export type AgentContext = {
     isCustom?: boolean
     instructions?: string[]
   }>
+  meals: {
+    today: string
+    dailyCalorieGoal: number
+    dailyProteinGoal: number
+    dailyWaterGoalMl: number
+    waterTotalMl: number
+    todaysMeals: Array<{
+      id: string
+      type: string
+      name: string
+      calories: number
+      proteinG: number
+      carbsG: number
+      fatG: number
+    }>
+    recentWater: Array<{ id: string; amountMl: number }>
+  }
 }
 
 export type AgentChatResponse =
@@ -500,6 +582,8 @@ export function riskForAction(action: AgentActionName): AgentRiskLevel {
     case 'clear_history':
     case 'delete_custom_exercise':
     case 'delete_muscle_group':
+    case 'delete_meal':
+    case 'remove_water':
       return 'high'
     case 'finish_workout':
     case 'update_plan':
@@ -512,6 +596,8 @@ export function riskForAction(action: AgentActionName): AgentRiskLevel {
     case 'set_goal_weight':
     case 'add_body_weight':
     case 'remove_body_weight':
+    case 'update_meal':
+    case 'set_meal_goals':
       return 'medium'
     default:
       return 'low'
@@ -599,6 +685,18 @@ export function labelForAction(action: AgentActionName, params: Record<string, u
       return 'Stop rest timer'
     case 'set_rest_duration':
       return `Set default rest duration to ${p.durationSeconds}s`
+    case 'log_meal':
+      return `Log meal "${p.name}" (${p.calories ?? 0} kcal)`
+    case 'update_meal':
+      return `Update meal ${p.mealId}`
+    case 'delete_meal':
+      return p.name ? `Delete meal "${p.name}"` : `Delete meal ${p.mealId}`
+    case 'add_water':
+      return `Log ${p.amountMl}ml water`
+    case 'remove_water':
+      return `Remove water entry ${p.entryId}`
+    case 'set_meal_goals':
+      return 'Update meal / water goals'
     default:
       return action
   }

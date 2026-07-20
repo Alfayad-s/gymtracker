@@ -16,7 +16,7 @@ import {
   type GroqContentPart,
   type GroqMessage,
 } from '@/lib/groq'
-import { extractProposalPayload, looksLikeMutationIntent } from '@/lib/ai/extract-proposal'
+import { extractProposalPayload, looksLikeMutationIntent, looksLikePhotoExerciseImport } from '@/lib/ai/extract-proposal'
 import { validateRawProposal } from '@/lib/ai/validate-proposal'
 import { formatRagContextBlock, retrieveRagChunks } from '@/lib/ai/rag'
 
@@ -88,6 +88,17 @@ function sanitizeContext(context: unknown): AgentContext | null {
     return null
   }
   if (!Array.isArray(c.historyIds)) return null
+  if (!c.meals || typeof c.meals !== 'object') {
+    c.meals = {
+      today: new Date().toISOString().slice(0, 10),
+      dailyCalorieGoal: 2500,
+      dailyProteinGoal: 160,
+      dailyWaterGoalMl: 3000,
+      waterTotalMl: 0,
+      todaysMeals: [],
+      recentWater: [],
+    }
+  }
   return c
 }
 
@@ -247,16 +258,27 @@ export async function POST(request: Request) {
           ...systemMessages,
           {
             role: 'system',
-            content:
-              'The user attached image(s). Describe what you see only as needed for fitness coaching. If they want create/update/delete in the app, reply with propose_gymtrack_actions JSON when appropriate.',
+            content: `The user attached image(s).
+
+If the image shows a workout list, exercise sheet, whiteboard, app screenshot, or gym notes:
+1. Read every exercise name (and sets×reps when visible).
+2. Reply with propose_gymtrack_actions JSON — one create_custom_exercise per NEW exercise (skip names already in exerciseCatalog/customExercises).
+3. Fill muscleGroup, equipment, difficulty, and short instructions when you can infer them from the name/photo.
+4. Also include plan/day actions if they ask to build a workout from the photo.
+
+If the image is food and they want to log it: propose log_meal with estimated macros.
+Otherwise describe what you see for coaching, then ask what to do.
+
+When proposing actions, output ONLY the JSON proposal (summary + actions array).`,
           },
           ...userMessages,
         ],
-        { maxTokens: 1800, temperature: 0.25 }
+        { maxTokens: 2200, temperature: 0.2 }
       )
 
       const embedded = extractProposalPayload(visionText)
-      if (embedded?.actions && looksLikeMutationIntent(lastUserText || 'update')) {
+      const wantsImport = looksLikePhotoExerciseImport(lastUserText, true)
+      if (embedded?.actions && (wantsImport || looksLikeMutationIntent(lastUserText || 'create'))) {
         return proposalResponse(embedded, context, visionText, ragHitCount)
       }
 
