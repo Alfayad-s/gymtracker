@@ -422,12 +422,8 @@ export function exerciseNamesMatch(a: string, b: string) {
   const left = normalizeExerciseName(a)
   const right = normalizeExerciseName(b)
   if (!left || !right) return false
-  if (left === right) return true
-  const shorter = left.length <= right.length ? left : right
-  const longer = left.length <= right.length ? right : left
-  // "overhead press" matches "barbell overhead press"
-  if (longer.includes(shorter) && shorter.length >= 6) return true
-  return false
+  // Exact name only — "Incline Barbell Bench Press" ≠ "Bench Press"
+  return left === right
 }
 
 export function findExistingExerciseName(

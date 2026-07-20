@@ -367,9 +367,12 @@ describe('validateRawProposal', () => {
     }
   })
 
-  it('matches similar exercise names', () => {
+  it('matches exact exercise names only (not keyword/substring)', () => {
     assert.equal(exerciseNamesMatch('dumbell lateral raises', 'Dumbbell Lateral Raise'), true)
     assert.equal(exerciseNamesMatch('face pull', 'Face Pulls'), true)
+    assert.equal(exerciseNamesMatch('Bench Press', 'bench press'), true)
+    assert.equal(exerciseNamesMatch('Incline Barbell Bench Press', 'Bench Press'), false)
+    assert.equal(exerciseNamesMatch('Close Grip Bench Press', 'Bench Press'), false)
     assert.equal(exerciseNamesMatch('Wrist Roller', 'Bench Press'), false)
   })
 
