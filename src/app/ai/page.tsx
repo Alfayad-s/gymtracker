@@ -410,8 +410,7 @@ export default function AiChatPage() {
         context,
       })
 
-      const maxAttempts = 2
-      let data: {
+      type ChatApiResponse = {
         message?: {
           role: 'assistant'
           content: string
@@ -419,7 +418,10 @@ export default function AiChatPage() {
         }
         error?: string
         ragHits?: number
-      } | null = null
+      }
+
+      const maxAttempts = 2
+      let data: ChatApiResponse | null = null
       let lastFailure = 'AI is unavailable right now'
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -438,9 +440,9 @@ export default function AiChatPage() {
           continue
         }
 
-        let parsed: typeof data = null
+        let parsed: ChatApiResponse | null = null
         try {
-          parsed = (await res.json()) as NonNullable<typeof data>
+          parsed = (await res.json()) as ChatApiResponse
         } catch {
           lastFailure = 'AI returned an invalid response. Please try again.'
           if ((res.status >= 500 || res.status === 429) && attempt < maxAttempts - 1) {
@@ -450,7 +452,11 @@ export default function AiChatPage() {
           break
         }
 
-        if (res.ok && parsed?.message && (parsed.message.content?.trim() || parsed.message.proposal)) {
+        if (
+          res.ok &&
+          parsed?.message &&
+          (parsed.message.content?.trim() || parsed.message.proposal)
+        ) {
           data = parsed
           break
         }

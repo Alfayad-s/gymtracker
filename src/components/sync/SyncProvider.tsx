@@ -248,6 +248,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
       for (const unsub of unsubscribers) unsub()
     }
+    // Intentionally keyed on user.id so profile object identity changes don't re-bind sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id
   }, [user?.id, loading])
 
   return <>{children}</>
