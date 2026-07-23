@@ -53,7 +53,7 @@ export default function ExerciseDetailPage() {
     () => (exerciseId ? getExerciseById(exerciseId, customExercises) : undefined),
     [exerciseId, customExercises]
   )
-  const { addExercise, activeSession } = useWorkoutStore()
+  const { activeSession } = useWorkoutStore()
   const [showDelete, setShowDelete] = useState(false)
   const [portalReady, setPortalReady] = useState(false)
 
@@ -88,13 +88,27 @@ export default function ExerciseDetailPage() {
   }
 
   const handleAddToWorkout = () => {
-    if (!activeSession) return
     const legacy = toLegacyExercise(exercise)
-    addExercise(legacy.id, legacy.name, legacy.category, legacy.equipment, {
-      targetSets: 3,
-      targetReps: 10,
-      restSeconds: 90,
-    })
+    const workout = useWorkoutStore.getState()
+    if (!workout.activeSession) {
+      workout.startWorkout('Custom Workout', [
+        {
+          exerciseId: legacy.id,
+          name: legacy.name,
+          categoryName: legacy.category,
+          equipment: legacy.equipment,
+          targetSets: 3,
+          targetReps: 10,
+          restSeconds: 90,
+        },
+      ])
+    } else {
+      workout.addExercise(legacy.id, legacy.name, legacy.category, legacy.equipment, {
+        targetSets: 3,
+        targetReps: 10,
+        restSeconds: 90,
+      })
+    }
     router.push('/workout')
   }
 

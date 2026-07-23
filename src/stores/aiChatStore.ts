@@ -42,7 +42,18 @@ type AiChatState = {
   setMessages: (
     updater: AiChatMessage[] | ((current: AiChatMessage[]) => AiChatMessage[])
   ) => void
+  /** Wipe transcript back to the welcome message (keeps the chat screen). */
   clearChat: () => void
+  /** Same reset as clear — used when the user chooses “delete this chat”. */
+  deleteChat: () => void
+}
+
+function freshWelcome(): AiChatMessage {
+  return {
+    ...WELCOME,
+    id: `welcome-${Date.now()}`,
+    createdAt: new Date().toISOString(),
+  }
 }
 
 export const useAiChatStore = create<AiChatState>()(
@@ -61,7 +72,8 @@ export const useAiChatStore = create<AiChatState>()(
         set({ messages: trimmed.length > 0 ? trimmed : [WELCOME] })
       },
 
-      clearChat: () => set({ messages: [{ ...WELCOME, id: `welcome-${Date.now()}` }] }),
+      clearChat: () => set({ messages: [freshWelcome()] }),
+      deleteChat: () => set({ messages: [freshWelcome()] }),
     }),
     {
       name: 'gymtrack-ai-chat',
@@ -85,5 +97,5 @@ export const useAiChatStore = create<AiChatState>()(
 )
 
 export function createWelcomeMessage(): AiChatMessage {
-  return { ...WELCOME, id: `welcome-${Date.now()}`, createdAt: new Date().toISOString() }
+  return freshWelcome()
 }

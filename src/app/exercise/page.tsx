@@ -16,7 +16,7 @@ export default function ExercisePage() {
   const [category, setCategory] = useState('All')
   const allExercises = useMergedExercises()
   const muscleGroups = useMuscleGroups()
-  const { addExercise, activeSession } = useWorkoutStore()
+  const activeSession = useWorkoutStore((s) => s.activeSession)
 
   const filteredExercises = useMemo(() => {
     const q = search.toLowerCase()
@@ -33,17 +33,29 @@ export default function ExercisePage() {
   }, [search, category, allExercises])
 
   const handleSelectExercise = (ex: (typeof allExercises)[0]) => {
-    if (activeSession) {
-      const legacy = toLegacyExercise(ex)
-      addExercise(legacy.id, legacy.name, legacy.category, legacy.equipment, {
+    const legacy = toLegacyExercise(ex)
+    const workout = useWorkoutStore.getState()
+    if (workout.activeSession) {
+      workout.addExercise(legacy.id, legacy.name, legacy.category, legacy.equipment, {
         targetSets: 3,
         targetReps: 10,
         restSeconds: 90,
       })
       router.push('/workout')
-    } else {
-      router.push(`/exercises/${ex.id}`)
+      return
     }
+    workout.startWorkout('Custom Workout', [
+      {
+        exerciseId: legacy.id,
+        name: legacy.name,
+        categoryName: legacy.category,
+        equipment: legacy.equipment,
+        targetSets: 3,
+        targetReps: 10,
+        restSeconds: 90,
+      },
+    ])
+    router.push('/workout')
   }
 
   return (

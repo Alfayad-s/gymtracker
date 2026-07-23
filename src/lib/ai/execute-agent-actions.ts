@@ -224,18 +224,33 @@ function executeOne(
           useExerciseStore.getState().exercises
         )
         if (!exercise) return { ok: false, message: 'Exercise not found' }
-        useWorkoutStore.getState().addExercise(
-          exercise.id,
-          exercise.name,
-          exercise.muscleGroup,
-          exercise.equipment,
-          {
-            targetSets: num(params.targetSets),
-            targetReps: num(params.targetReps),
-            restSeconds: num(params.restSeconds),
-          }
-        )
-        return { ok: true, message: `Added ${exercise.name}` }
+        const workout = useWorkoutStore.getState()
+        if (!workout.activeSession) {
+          workout.startWorkout('Workout', [
+            {
+              exerciseId: exercise.id,
+              name: exercise.name,
+              categoryName: exercise.muscleGroup,
+              equipment: exercise.equipment,
+              targetSets: num(params.targetSets),
+              targetReps: num(params.targetReps),
+              restSeconds: num(params.restSeconds),
+            },
+          ])
+        } else {
+          workout.addExercise(
+            exercise.id,
+            exercise.name,
+            exercise.muscleGroup,
+            exercise.equipment,
+            {
+              targetSets: num(params.targetSets),
+              targetReps: num(params.targetReps),
+              restSeconds: num(params.restSeconds),
+            }
+          )
+        }
+        return { ok: true, message: `Added ${exercise.name} to workout` }
       }
       case 'remove_workout_exercise': {
         useWorkoutStore.getState().removeExercise(str(params.exerciseId))

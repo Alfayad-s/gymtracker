@@ -39,9 +39,20 @@ type AddExerciseOptions = {
   restSeconds?: number
 }
 
+export type StartWorkoutExercise = {
+  exerciseId: string
+  name: string
+  categoryName?: string
+  equipment?: string
+  targetSets?: number
+  targetReps?: number
+  restSeconds?: number
+}
+
 type WorkoutState = {
   activeSession: ActiveSession | null
-  startWorkout: (name: string) => void
+  /** Start a session; pass exercises to seed them in the same atomic update. */
+  startWorkout: (name: string, initialExercises?: StartWorkoutExercise[]) => void
   cancelWorkout: () => void
   finishWorkout: () => CompletedWorkout | null
   addExercise: (
@@ -50,7 +61,7 @@ type WorkoutState = {
     categoryName?: string,
     equipment?: string,
     options?: AddExerciseOptions
-  ) => void
+  ) => boolean
   removeExercise: (exerciseId: string) => void
   addSet: (exerciseId: string) => void
   removeSet: (exerciseId: string, setIndex: number) => void
@@ -67,6 +78,35 @@ type WorkoutState = {
 
 function uid() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function buildLoggedExercise(
+  exerciseId: string,
+  name: string,
+  categoryName?: string,
+  equipment?: string,
+  options?: AddExerciseOptions
+): LoggedExercise {
+  const setCount = Math.max(1, options?.targetSets ?? 3)
+  const reps = options?.targetReps ?? 10
+  const restSeconds = options?.restSeconds ?? 90
+
+  return {
+    exerciseId,
+    name,
+    categoryName,
+    equipment,
+    targetReps: reps,
+    restSeconds,
+    sets: Array.from({ length: setCount }, (_, i) => ({
+      id: uid(),
+      setNumber: i + 1,
+      type: 'normal' as const,
+      weight: '',
+      reps,
+      isCompleted: false,
+    })),
+  }
 }
 
 function setVolumeKg(setItem: LoggedSet) {
@@ -214,15 +254,30 @@ export const useWorkoutStore = create<WorkoutState>()(
     (set, get) => ({
       activeSession: null,
 
-      startWorkout: (name) =>
+      startWorkout: (name, initialExercises = []) => {
+        const seen = new Set<string>()
+        const exercises: LoggedExercise[] = []
+        for (const ex of initialExercises) {
+          if (!ex.exerciseId || seen.has(ex.exerciseId)) continue
+          seen.add(ex.exerciseId)
+          exercises.push(
+            buildLoggedExercise(ex.exerciseId, ex.name, ex.categoryName, ex.equipment, {
+              targetSets: ex.targetSets,
+              targetReps: ex.targetReps,
+              restSeconds: ex.restSeconds,
+            })
+          )
+        }
+
         set({
           activeSession: {
             id: uid(),
             name,
             startedAt: new Date().toISOString(),
-            exercises: [],
+            exercises,
           },
-        }),
+        })
+      },
 
       cancelWorkout: () => set({ activeSession: null }),
 
@@ -234,39 +289,22 @@ export const useWorkoutStore = create<WorkoutState>()(
         return summary
       },
 
-      addExercise: (exerciseId, name, categoryName, equipment, options) =>
-        set((state) => {
-          if (!state.activeSession) return {}
-          if (state.activeSession.exercises.some((e) => e.exerciseId === exerciseId)) return {}
+      addExercise: (exerciseId, name, categoryName, equipment, options) => {
+        const session = get().activeSession
+        if (!session) return false
+        if (session.exercises.some((e) => e.exerciseId === exerciseId)) return true
 
-          const setCount = Math.max(1, options?.targetSets ?? 3)
-          const reps = options?.targetReps ?? 10
-          const restSeconds = options?.restSeconds ?? 90
-
-          const newExercise: LoggedExercise = {
-            exerciseId,
-            name,
-            categoryName,
-            equipment,
-            targetReps: reps,
-            restSeconds,
-            sets: Array.from({ length: setCount }, (_, i) => ({
-              id: uid(),
-              setNumber: i + 1,
-              type: 'normal' as const,
-              weight: '',
-              reps,
-              isCompleted: false,
-            })),
-          }
-
-          return {
-            activeSession: {
-              ...state.activeSession,
-              exercises: [...state.activeSession.exercises, newExercise],
-            },
-          }
-        }),
+        set({
+          activeSession: {
+            ...session,
+            exercises: [
+              ...session.exercises,
+              buildLoggedExercise(exerciseId, name, categoryName, equipment, options),
+            ],
+          },
+        })
+        return true
+      },
 
       removeExercise: (exerciseId) =>
         set((state) => {

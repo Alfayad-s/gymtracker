@@ -100,34 +100,72 @@ export function collectLocalPayload(): UserSyncPayload {
 
 export { emptyLocalPayload }
 
+function isNewerIso(a: string | undefined, b: string | undefined) {
+  const aMs = a ? new Date(a).getTime() : 0
+  const bMs = b ? new Date(b).getTime() : 0
+  return Number.isFinite(aMs) && aMs > (Number.isFinite(bMs) ? bMs : 0)
+}
+
+/**
+ * Apply a sync payload, but never overwrite a store slice that the user edited
+ * more recently locally (e.g. starting a workout while GET/POST sync is in flight).
+ */
 export function applyPayloadToStores(payload: UserSyncPayload) {
-  usePlanStore.setState({ plans: payload.stores.plans.data })
-  useHistoryStore.setState({ workouts: payload.stores.history.data })
-  useWorkoutStore.setState({ activeSession: payload.stores.activeWorkout.data })
+  const meta = readSyncMeta()
+  const local = collectLocalPayload()
+
+  const pick = <K extends SyncStoreKey>(key: K): UserSyncPayload['stores'][K] => {
+    const incoming = payload.stores[key]
+    const current = local.stores[key]
+    const localTouched = meta.storeTimestamps[key]
+    // Prefer whatever is newest among: explicit local touch, current slice, incoming slice
+    if (
+      isNewerIso(localTouched, incoming.updatedAt) ||
+      isNewerIso(current.updatedAt, incoming.updatedAt)
+    ) {
+      return current
+    }
+    return incoming
+  }
+
+  const plans = pick('plans')
+  const history = pick('history')
+  const activeWorkout = pick('activeWorkout')
+  const progress = pick('progress')
+  const customExercises = pick('customExercises')
+  const muscleGroups = pick('muscleGroups')
+  const profile = pick('profile')
+
+  usePlanStore.setState({ plans: plans.data })
+  useHistoryStore.setState({ workouts: history.data })
+  useWorkoutStore.setState({ activeSession: activeWorkout.data })
   useProgressStore.setState({
-    bodyWeightLog: payload.stores.progress.data.bodyWeightLog,
-    goalWeight: payload.stores.progress.data.goalWeight,
+    bodyWeightLog: progress.data.bodyWeightLog,
+    goalWeight: progress.data.goalWeight,
   })
   // History is the source of truth for recovery fatigue
-  useRecoveryStore.getState().rebuildFromWorkouts(payload.stores.history.data)
+  useRecoveryStore.getState().rebuildFromWorkouts(history.data)
   useExerciseStore.setState({
-    exercises: payload.stores.customExercises.data,
+    exercises: customExercises.data,
   })
   useMuscleGroupStore.setState({
-    groups: payload.stores.muscleGroups.data,
+    groups: muscleGroups.data,
   })
   useProfileStore.setState({
-    heightCm: payload.stores.profile.data.heightCm,
-    weightUnit: payload.stores.profile.data.weightUnit,
-    experienceLevel: payload.stores.profile.data.experienceLevel,
+    heightCm: profile.data.heightCm,
+    weightUnit: profile.data.weightUnit,
+    experienceLevel: profile.data.experienceLevel,
   })
 
-  const meta = readSyncMeta()
-  for (const key of SYNC_STORE_KEYS) {
-    meta.storeTimestamps[key] = payload.stores[key].updatedAt
-  }
+  meta.storeTimestamps.plans = plans.updatedAt
+  meta.storeTimestamps.history = history.updatedAt
+  meta.storeTimestamps.activeWorkout = activeWorkout.updatedAt
+  meta.storeTimestamps.progress = progress.updatedAt
+  meta.storeTimestamps.customExercises = customExercises.updatedAt
+  meta.storeTimestamps.muscleGroups = muscleGroups.updatedAt
+  meta.storeTimestamps.profile = profile.updatedAt
   // Recovery was rebuilt from history — keep its stamp aligned
-  meta.storeTimestamps.recovery = payload.stores.history.updatedAt
+  meta.storeTimestamps.recovery = history.updatedAt
   meta.lastSyncedAt = nowIso()
   writeSyncMeta(meta)
 }

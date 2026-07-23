@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Bot, FileText, Trash2, Volume2, VolumeX } from 'lucide-react'
+import {
+  ArrowLeft,
+  Bot,
+  Eraser,
+  FileText,
+  MoreVertical,
+  Trash2,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react'
 import { AgentProposalCard } from '@/components/ai/AgentProposalCard'
 import { FormattedAiMessage } from '@/components/body-composition/AnalysisSections'
 import { PromptInputBox } from '@/components/ui/ai-prompt-box'
@@ -141,15 +151,22 @@ export default function AiChatPage() {
   const messages = useAiChatStore((s) => s.messages)
   const setMessages = useAiChatStore((s) => s.setMessages)
   const clearChat = useAiChatStore((s) => s.clearChat)
+  const deleteChat = useAiChatStore((s) => s.deleteChat)
   const hydrated = useAiChatStore((s) => s.hydrated)
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [lastRagHits, setLastRagHits] = useState(0)
   const [speakingId, setSpeakingId] = useState<string | null>(null)
   const [speechSupported, setSpeechSupported] = useState(false)
+  const [retryPayload, setRetryPayload] = useState<{
+    text: string
+    files: File[]
+  } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const executingRef = useRef(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setSpeechSupported('speechSynthesis' in window)
@@ -175,12 +192,53 @@ export default function AiChatPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointer = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
+
   const stopSpeaking = useCallback(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
     setSpeakingId(null)
   }, [])
+
+  const handleClearChat = useCallback(() => {
+    setMenuOpen(false)
+    if (!confirm('Clear this chat? Messages will be removed.')) return
+    stopSpeaking()
+    setError(null)
+    setRetryPayload(null)
+    setLastRagHits(0)
+    clearChat()
+  }, [clearChat, stopSpeaking])
+
+  const handleDeleteChat = useCallback(() => {
+    setMenuOpen(false)
+    if (!confirm('Delete this chat? This clears the conversation and leaves the AI screen.')) {
+      return
+    }
+    stopSpeaking()
+    setError(null)
+    setRetryPayload(null)
+    setLastRagHits(0)
+    deleteChat()
+    router.back()
+  }, [deleteChat, router, stopSpeaking])
 
   const readAloud = useCallback(
     (message: AiChatMessage) => {
@@ -301,7 +359,10 @@ export default function AiChatPage() {
 
     stopSpeaking()
     setError(null)
+    setRetryPayload(null)
     setIsLoading(true)
+
+    let userMessageId: string | null = null
 
     try {
       const attachments: ChatAttachment[] = []
@@ -330,24 +391,27 @@ export default function AiChatPage() {
       const userMessage: AiChatMessage = {
         id: uid(),
         role: 'user',
-        content: trimmed || (attachments.some((a) => a.kind === 'image') ? 'What do you see in this image?' : 'Please review the attached file.'),
+        content:
+          trimmed ||
+          (attachments.some((a) => a.kind === 'image')
+            ? 'What do you see in this image?'
+            : 'Please review the attached file.'),
         attachments: attachments.length ? attachments : undefined,
         createdAt: new Date().toISOString(),
       }
+      userMessageId = userMessage.id
 
       const nextMessages = [...messages, userMessage]
       setMessages(nextMessages)
 
       const context = buildAgentContext()
-      const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: toApiMessages(nextMessages),
-          context,
-        }),
+      const requestBody = JSON.stringify({
+        messages: toApiMessages(nextMessages),
+        context,
       })
-      const data = (await res.json()) as {
+
+      const maxAttempts = 2
+      let data: {
         message?: {
           role: 'assistant'
           content: string
@@ -355,14 +419,61 @@ export default function AiChatPage() {
         }
         error?: string
         ragHits?: number
+      } | null = null
+      let lastFailure = 'AI is unavailable right now'
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        let res: Response
+        try {
+          res = await fetch('/api/ai/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: requestBody,
+          })
+        } catch {
+          lastFailure = 'Network error. Check your connection and try again.'
+          if (attempt < maxAttempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 2000))
+          }
+          continue
+        }
+
+        let parsed: typeof data = null
+        try {
+          parsed = (await res.json()) as NonNullable<typeof data>
+        } catch {
+          lastFailure = 'AI returned an invalid response. Please try again.'
+          if ((res.status >= 500 || res.status === 429) && attempt < maxAttempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, res.status === 429 ? 5000 : 2000))
+            continue
+          }
+          break
+        }
+
+        if (res.ok && parsed?.message && (parsed.message.content?.trim() || parsed.message.proposal)) {
+          data = parsed
+          break
+        }
+
+        lastFailure = parsed?.error || 'AI is unavailable right now'
+        if (res.status === 429 && attempt < maxAttempts - 1) {
+          const retryAfter = Number(res.headers.get('retry-after'))
+          const waitMs =
+            Number.isFinite(retryAfter) && retryAfter > 0
+              ? Math.min(10_000, retryAfter * 1000)
+              : 5000
+          await new Promise((resolve) => setTimeout(resolve, waitMs))
+          continue
+        }
+        if (res.status >= 500 && attempt < maxAttempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2000))
+          continue
+        }
+        break
       }
 
-      if (!res.ok) {
-        throw new Error(data.error || 'AI is unavailable right now')
-      }
-
-      if (!data.message) {
-        throw new Error('AI returned an empty response')
+      if (!data?.message || (!data.message.content?.trim() && !data.message.proposal)) {
+        throw new Error(lastFailure)
       }
 
       setLastRagHits(typeof data.ragHits === 'number' ? data.ragHits : 0)
@@ -370,7 +481,7 @@ export default function AiChatPage() {
       const assistantMessage: AiChatMessage = {
         id: uid(),
         role: 'assistant',
-        content: data.message.content,
+        content: data.message.content?.trim() || data.message.proposal?.summary || 'Done.',
         animate: true,
         createdAt: new Date().toISOString(),
       }
@@ -384,6 +495,10 @@ export default function AiChatPage() {
 
       setMessages((current) => [...current, assistantMessage])
     } catch (err) {
+      if (userMessageId) {
+        setMessages((current) => current.filter((m) => m.id !== userMessageId))
+      }
+      setRetryPayload({ text: trimmed, files: usableFiles })
       setError(err instanceof Error ? err.message : 'AI is unavailable right now')
     } finally {
       setIsLoading(false)
@@ -419,20 +534,38 @@ export default function AiChatPage() {
                 : ''}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (confirm('Clear this chat history?')) {
-                stopSpeaking()
-                clearChat()
-              }
-            }}
-            className="absolute right-0 p-2 bg-card border border-border rounded-xl text-muted-foreground hover:text-foreground cursor-pointer active:scale-95 transition-transform"
-            aria-label="Clear chat"
-            title="Clear chat"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="absolute right-0" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              className="p-2 bg-card border border-border rounded-xl text-muted-foreground hover:text-foreground cursor-pointer active:scale-95 transition-transform"
+              aria-label="Chat options"
+              aria-expanded={menuOpen}
+              title="Chat options"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-48 rounded-[4px] border border-border bg-card shadow-lg overflow-hidden z-30">
+                <button
+                  type="button"
+                  onClick={handleClearChat}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-foreground hover:bg-muted/70 cursor-pointer"
+                >
+                  <Eraser className="w-4 h-4 text-muted-foreground" />
+                  Clear chat
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteChat}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium text-destructive hover:bg-destructive/10 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete this chat
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -563,8 +696,36 @@ export default function AiChatPage() {
         )}
 
         {error && (
-          <div className="rounded-[16px] bg-destructive/10 border border-destructive/20 px-4 py-3">
-            <p className="text-xs text-destructive">{error}</p>
+          <div className="rounded-[16px] bg-destructive/10 border border-destructive/20 px-4 py-3 space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-xs text-destructive leading-relaxed">{error}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null)
+                  setRetryPayload(null)
+                }}
+                className="shrink-0 p-1 rounded-lg text-destructive/70 hover:text-destructive cursor-pointer"
+                aria-label="Dismiss error"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {retryPayload && (
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={() => {
+                  const payload = retryPayload
+                  setRetryPayload(null)
+                  setError(null)
+                  void sendMessage(payload.text, payload.files)
+                }}
+                className="h-8 px-3 rounded-full bg-destructive/15 border border-destructive/25 text-[11px] font-semibold text-destructive cursor-pointer active:scale-95 disabled:opacity-40"
+              >
+                Try again
+              </button>
+            )}
           </div>
         )}
 

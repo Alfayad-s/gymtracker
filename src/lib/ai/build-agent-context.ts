@@ -21,7 +21,7 @@ import { useWorkoutStore } from '@/stores/workoutStore'
 import { todayKey, useMealStore } from '@/stores/mealStore'
 
 const HISTORY_LIMIT = 5
-const CATALOG_LIMIT = 60
+const CATALOG_LIMIT = 35
 const HISTORY_ID_LIMIT = 30
 
 export function buildAgentContext(): AgentContext {

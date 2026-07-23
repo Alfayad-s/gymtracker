@@ -29,6 +29,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const loading = useAuthStore((s) => s.loading)
   const syncingRef = useRef(false)
   const applyingRef = useRef(false)
+  const pendingPushRef = useRef(false)
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hydratedRef = useRef(false)
 
@@ -86,6 +87,60 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     let cancelled = false
 
+    const flushPendingPush = () => {
+      if (!pendingPushRef.current || cancelled) return
+      pendingPushRef.current = false
+      schedulePush()
+    }
+
+    const pushNow = async () => {
+      if (!user || applyingRef.current) return
+      syncingRef.current = true
+      try {
+        const payload = collectLocalPayload()
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (res.ok) {
+          const { payload: saved } = (await res.json()) as {
+            payload: ReturnType<typeof collectLocalPayload>
+          }
+          // Keep any edits that landed during the POST round-trip.
+          const newestLocal = collectLocalPayload()
+          const finalPayload = mergePayloads(saved, newestLocal)
+          if (!cancelled) {
+            applyingRef.current = true
+            applyPayloadToStores(finalPayload)
+            applyingRef.current = false
+          }
+        }
+      } catch {
+        /* ignore background push errors */
+      } finally {
+        syncingRef.current = false
+        flushPendingPush()
+      }
+    }
+
+    const schedulePush = () => {
+      if (applyingRef.current) return
+      if (syncingRef.current) {
+        // Don't drop local mutations while a sync is in flight — flush after it ends.
+        pendingPushRef.current = true
+        return
+      }
+      if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
+      pushTimerRef.current = setTimeout(() => {
+        if (syncingRef.current) {
+          pendingPushRef.current = true
+          return
+        }
+        void pushNow()
+      }, PUSH_DEBOUNCE_MS)
+    }
+
     const runSync = async () => {
       if (syncingRef.current) return
       syncingRef.current = true
@@ -102,6 +157,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           payload: ReturnType<typeof collectLocalPayload> | null
         }
 
+        // Collect local AFTER the network wait so mid-flight edits (start workout, etc.)
+        // are not wiped by a stale pre-request snapshot.
         const local = userChanged ? emptyLocalPayload() : collectLocalPayload()
         const merged = mergePayloads(remote, local)
 
@@ -122,8 +179,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
             payload: ReturnType<typeof collectLocalPayload>
           }
           if (!cancelled) {
+            const newestLocal = collectLocalPayload()
+            const finalPayload = mergePayloads(saved, newestLocal)
             applyingRef.current = true
-            applyPayloadToStores(saved)
+            applyPayloadToStores(finalPayload)
             applyingRef.current = false
           }
         }
@@ -131,6 +190,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         console.error('Data sync failed:', err)
       } finally {
         syncingRef.current = false
+        flushPendingPush()
       }
     }
 
@@ -139,45 +199,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       clearInterval(waitHydration)
       void runSync()
     }, 100)
-
-    return () => {
-      cancelled = true
-      clearInterval(waitHydration)
-    }
-  }, [user?.id, loading])
-
-  // Debounced push when synced stores change
-  useEffect(() => {
-    if (!user) return
-
-    const schedulePush = () => {
-      if (applyingRef.current || syncingRef.current) return
-      if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
-      pushTimerRef.current = setTimeout(async () => {
-        if (!user || syncingRef.current) return
-        syncingRef.current = true
-        try {
-          const payload = collectLocalPayload()
-          const res = await fetch('/api/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
-          if (res.ok) {
-            const { payload: saved } = (await res.json()) as {
-              payload: ReturnType<typeof collectLocalPayload>
-            }
-            applyingRef.current = true
-            applyPayloadToStores(saved)
-            applyingRef.current = false
-          }
-        } catch {
-          /* ignore background push errors */
-        } finally {
-          syncingRef.current = false
-        }
-      }, PUSH_DEBOUNCE_MS)
-    }
 
     const unsubscribers = [
       usePlanStore.subscribe(() => {
@@ -222,10 +243,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     ]
 
     return () => {
+      cancelled = true
+      clearInterval(waitHydration)
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
       for (const unsub of unsubscribers) unsub()
     }
-  }, [user?.id])
+  }, [user?.id, loading])
 
   return <>{children}</>
 }

@@ -462,7 +462,6 @@ export default function DashboardPage() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
   const startWorkout = useWorkoutStore((s) => s.startWorkout)
-  const addExercise = useWorkoutStore((s) => s.addExercise)
   const activeSession = useWorkoutStore((s) => s.activeSession)
   const plans = usePlanStore((s) => s.plans)
   const bodyWeightLog = useProgressStore((s) => s.bodyWeightLog)
@@ -750,20 +749,24 @@ export default function DashboardPage() {
   }, [recoveryList])
 
   const handleContinue = () => {
-    if (!activeSession) {
-      const sessionName = todayDay
-        ? `${todayDay.name}${todayDay.muscleFocus ? ` · ${todayDay.muscleFocus}` : ''}`
+    const session = useWorkoutStore.getState().activeSession
+    if (!session) {
+      const day = todayDay
+      const sessionName = day
+        ? `${day.name}${day.muscleFocus ? ` · ${day.muscleFocus}` : ''}`
         : 'Quick Workout'
-      startWorkout(sessionName)
-      if (todayDay) {
-        for (const ex of todayDay.exercises) {
-          addExercise(ex.exerciseId, ex.name, ex.category, ex.equipment, {
-            targetSets: ex.targetSets,
-            targetReps: ex.targetReps,
-            restSeconds: ex.restSeconds,
-          })
-        }
-      }
+      startWorkout(
+        sessionName,
+        day?.exercises.map((ex) => ({
+          exerciseId: ex.exerciseId,
+          name: ex.name,
+          categoryName: ex.category,
+          equipment: ex.equipment,
+          targetSets: ex.targetSets,
+          targetReps: ex.targetReps,
+          restSeconds: ex.restSeconds,
+        }))
+      )
     }
     router.push('/workout')
   }

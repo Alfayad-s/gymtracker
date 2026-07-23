@@ -20,6 +20,8 @@ import { extractProposalPayload, looksLikeMutationIntent, looksLikePhotoExercise
 import { validateRawProposal } from '@/lib/ai/validate-proposal'
 import { formatRagContextBlock, retrieveRagChunks } from '@/lib/ai/rag'
 
+export const maxDuration = 60
+
 type ChatRequest = {
   messages?: GroqMessage[]
   context?: AgentContext
@@ -49,7 +51,7 @@ function cleanMessages(messages: GroqMessage[] | undefined): GroqMessage[] {
     if (message.role !== 'user' && message.role !== 'assistant') continue
 
     if (typeof message.content === 'string') {
-      const content = message.content.trim().slice(0, 4000)
+      const content = message.content.trim().slice(0, 2000)
       if (content) cleaned.push({ role: message.role, content })
       continue
     }
@@ -59,7 +61,7 @@ function cleanMessages(messages: GroqMessage[] | undefined): GroqMessage[] {
     const parts: GroqContentPart[] = []
     for (const part of message.content) {
       if (part.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
-        parts.push({ type: 'text', text: part.text.trim().slice(0, 4000) })
+        parts.push({ type: 'text', text: part.text.trim().slice(0, 2000) })
         continue
       }
       if (
@@ -78,7 +80,7 @@ function cleanMessages(messages: GroqMessage[] | undefined): GroqMessage[] {
     }
   }
 
-  return cleaned.slice(-10)
+  return cleaned.slice(-6)
 }
 
 function sanitizeContext(context: unknown): AgentContext | null {
@@ -116,6 +118,16 @@ function buildContextBlock(context: AgentContext) {
   return `GymTrack app snapshot (compact):${hint}${planHint}\n${JSON.stringify(lean)}`
 }
 
+function rateLimitResponse(error: unknown) {
+  return NextResponse.json(
+    { error: friendlyAiError(error) },
+    {
+      status: 429,
+      headers: { 'Retry-After': '5' },
+    }
+  )
+}
+
 function friendlyAiError(error: unknown): string {
   if (isRateLimitError(error)) {
     return 'AI is busy right now (rate limit). Wait a few seconds and try again.'
@@ -123,6 +135,12 @@ function friendlyAiError(error: unknown): string {
   if (error instanceof Error && error.message) {
     if (/tokens per minute|tpm|rate limit|429/i.test(error.message)) {
       return 'AI is busy right now (rate limit). Wait a few seconds and try again.'
+    }
+    if (/timed out|timeout|abort/i.test(error.message)) {
+      return 'AI took too long to respond. Please try again.'
+    }
+    if (/empty response/i.test(error.message)) {
+      return 'AI returned an empty reply. Please try again.'
     }
     if (error.message.length > 180) {
       return 'AI is unavailable right now. Please try again.'
@@ -289,7 +307,7 @@ When proposing actions, output ONLY the JSON proposal (summary + actions array).
     } catch (error) {
       console.error('AI vision chat failed:', error)
       if (isRateLimitError(error)) {
-        return NextResponse.json({ error: friendlyAiError(error) }, { status: 429 })
+        return rateLimitResponse(error)
       }
       return NextResponse.json({ error: friendlyAiError(error) }, { status: 503 })
     }
@@ -306,8 +324,12 @@ When proposing actions, output ONLY the JSON proposal (summary + actions array).
       if (embedded?.actions && looksLikeMutationIntent(lastUserText)) {
         return proposalResponse(embedded, context, null, ragHitCount)
       }
+      const content = result.content.trim()
+      if (!content) {
+        return jsonFallbackResponse(systemMessages, userMessages, context, lastUserText, ragHitCount)
+      }
       return NextResponse.json({
-        message: { role: 'assistant', content: result.content },
+        message: { role: 'assistant', content },
         ragHits: ragHitCount,
       })
     }
@@ -340,7 +362,7 @@ When proposing actions, output ONLY the JSON proposal (summary + actions array).
     }
 
     if (isRateLimitError(error)) {
-      return NextResponse.json({ error: friendlyAiError(error) }, { status: 429 })
+      return rateLimitResponse(error)
     }
 
     try {
@@ -353,9 +375,12 @@ When proposing actions, output ONLY the JSON proposal (summary + actions array).
       )
     } catch (fallbackError) {
       console.error('AI JSON fallback failed:', fallbackError)
+      if (isRateLimitError(fallbackError)) {
+        return rateLimitResponse(fallbackError)
+      }
       return NextResponse.json(
-        { error: friendlyAiError(isRateLimitError(fallbackError) ? fallbackError : error) },
-        { status: isRateLimitError(fallbackError) ? 429 : 503 }
+        { error: friendlyAiError(error) },
+        { status: 503 }
       )
     }
   }

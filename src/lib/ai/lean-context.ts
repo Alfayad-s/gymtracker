@@ -67,15 +67,15 @@ export function leanContextForModel(context: AgentContext) {
       completedAt: w.completedAt,
     })),
     historyIds: context.historyIds.slice(0, 15),
-    customExercises: context.customExercises.map((ex) => ({
+    customExercises: context.customExercises.slice(0, 20).map((ex) => ({
       id: ex.id,
       name: ex.name,
       muscleGroup: ex.muscleGroup,
       equipment: ex.equipment,
       difficulty: ex.difficulty,
     })),
-    muscleGroups: context.muscleGroups,
-    exerciseCatalog: context.exerciseCatalog.map((ex) => ({
+    muscleGroups: context.muscleGroups.slice(0, 20),
+    exerciseCatalog: context.exerciseCatalog.slice(0, 30).map((ex) => ({
       id: ex.id,
       name: ex.name,
       muscleGroup: ex.muscleGroup,
@@ -89,14 +89,14 @@ export function leanContextForModel(context: AgentContext) {
             waterMl: context.meals.dailyWaterGoalMl,
           },
           waterTotalMl: context.meals.waterTotalMl,
-          todaysMeals: context.meals.todaysMeals.slice(0, 8).map((m) => ({
+          todaysMeals: context.meals.todaysMeals.slice(0, 6).map((m) => ({
             id: m.id,
             type: m.type,
             name: m.name,
             calories: m.calories,
             proteinG: m.proteinG,
           })),
-          recentWater: context.meals.recentWater.slice(0, 5),
+          recentWater: context.meals.recentWater.slice(0, 4),
         }
       : undefined,
   }
